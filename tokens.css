@@ -1,0 +1,87 @@
+/* =====================================================================
+   퀴즈쇼 디자인 토큰 — Dark minimal + 귀여운 캐릭터
+   - Primary  : Crimson #DB072F  (주요 버튼, 배지, 선택, 경고)
+   - Secondary: Butter  #FFC93C  (타이머, 순위, 하이라이트)
+   - Neutral  : Night   (남색 기운의 블랙 9단계 — 배경, 면, 선, 텍스트)
+   - Character: 참가자 캐릭터 8색 (크림슨 + 밝은 캔디 컬러), 보기 A~F 배지에도 사용
+   색은 반드시 아래 토큰으로만 사용합니다.
+   ===================================================================== */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css');
+
+:root {
+  /* ---- Primary: Crimson ---- */
+  --crimson:       #DB072F;   /* ★ 메인 */
+  --crimson-hover: #EE1B43;
+  --crimson-press: #B80427;
+  --crimson-soft:  rgba(219, 7, 47, .16);
+  --crimson-text:  #FF6F8A;   /* 어두운 배경 위 크림슨 글자 */
+
+  /* ---- Secondary: Butter ---- */
+  --butter:      #FFC93C;     /* ★ 서브 */
+  --butter-soft: rgba(255, 201, 60, .14);
+
+  /* ---- Neutral: Night ---- */
+  --night-1000: #07080D;      /* 가장 깊은 배경 */
+  --night-950:  #0C0D14;      /* 기본 배경 */
+  --night-900:  #14151F;      /* 카드 */
+  --night-850:  #1B1D2A;      /* 올라온 카드 */
+  --night-800:  #242737;      /* 입력, 눌린 면 */
+  --night-700:  #313447;      /* 선 */
+  --night-500:  #6A6E86;      /* 비활성 */
+  --night-400:  #9A9DB3;      /* 보조 텍스트 */
+  --night-100:  #F3F4F9;      /* 기본 텍스트 */
+  --ink:        #12131A;      /* 밝은 면 위 글자 */
+
+  /* ---- Character palette: 캐릭터 8색 (보기 A~F 는 앞의 6색 사용) ---- */
+  --char-0: #DB072F;  --on-char-0: #FFFFFF;   /* 크림슨 */
+  --char-1: #4B7BFF;  --on-char-1: #FFFFFF;   /* 블루 */
+  --char-2: #FFC93C;  --on-char-2: #12131A;   /* 버터 */
+  --char-3: #2ED39A;  --on-char-3: #12131A;   /* 민트 */
+  --char-4: #A98BFF;  --on-char-4: #12131A;   /* 라일락 */
+  --char-5: #FF8FB1;  --on-char-5: #12131A;   /* 핑크 */
+  --char-6: #FF8A3D;  --on-char-6: #12131A;   /* 탠저린 */
+  --char-7: #5CC8FF;  --on-char-7: #12131A;   /* 스카이 */
+
+  /* ---- 역할 별칭 (컴포넌트는 이 이름만 사용) ---- */
+  --bg:        var(--night-950);
+  --bg-deep:   var(--night-1000);
+  --card:      var(--night-900);
+  --card-2:    var(--night-850);
+  --field:     var(--night-800);
+  --line:      var(--night-700);
+  --text:      var(--night-100);
+  --text-sub:  var(--night-400);
+  --text-off:  var(--night-500);
+  --primary:   var(--crimson);
+  --on-primary:#FFFFFF;
+  --accent:    var(--butter);
+  --on-accent: var(--ink);
+  --positive:  #2ED39A;
+  --focus:     var(--butter);
+  --glow-top:  radial-gradient(90% 60% at 50% -15%, rgba(75, 123, 255, .22), transparent 70%);
+
+  /* ---- 타이포 ---- */
+  --font: 'Pretendard Variable', Pretendard, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  --fs-xs: 12px; --fs-sm: 14px; --fs-md: 16px; --fs-lg: 18px;
+  --fs-xl: 22px; --fs-2xl: 28px; --fs-3xl: 36px; --fs-4xl: 48px;
+  --tight: -0.03em;
+
+  /* ---- 간격 (4px 단위) ---- */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 72px;
+
+  /* ---- 모서리: 전부 둥글게 ---- */
+  --r-sm: 10px;
+  --r-md: 16px;
+  --r-lg: 24px;
+  --r-pill: 999px;
+
+  /* ---- 모션 ---- */
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  --bounce: cubic-bezier(.34, 1.56, .64, 1);
+  --dur-fast: 120ms; --dur: 220ms; --dur-slow: 480ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-fast: 0ms; --dur: 0ms; --dur-slow: 0ms; }
+  *, *::before, *::after { animation-duration: 0ms !important; animation-iteration-count: 1 !important; }
+}

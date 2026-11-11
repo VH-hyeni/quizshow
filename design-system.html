@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>퀴즈쇼 디자인 시스템</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .ds { max-width: 1000px; margin: 0 auto; padding: var(--sp-8) var(--sp-5); }
+    .ds header { text-align: center; margin-bottom: var(--sp-8); }
+    .ds header .mascot { width: 88px; margin: 0 auto var(--sp-4); }
+    .ds header h1 { font-size: var(--fs-4xl); font-weight: 800; margin: 0 0 var(--sp-2); }
+    .ds header p { color: var(--text-sub); margin: 0 auto; max-width: 46ch; }
+    .ds section { margin-bottom: var(--sp-8); }
+    .ds h2 { font-size: var(--fs-2xl); font-weight: 800; margin: 0 0 var(--sp-2); text-align: center; }
+    .ds h2 + p { color: var(--text-sub); text-align: center; margin: 0 auto var(--sp-6); max-width: 52ch; }
+    .ds h3 { font-size: var(--fs-sm); color: var(--text-sub); font-weight: 600; margin: var(--sp-6) 0 var(--sp-3); text-align: center; }
+    .row-chars { display: flex; justify-content: center; flex-wrap: wrap; gap: var(--sp-5); }
+    .row-chars figure, .lineup figure { display: flex; flex-direction: column-reverse; align-items: center; }
+    .row-chars figure { margin: 0; width: 104px; text-align: center; }
+    .row-chars figure svg { width: 72px; margin: 0 auto; }
+    .row-chars .stage-av { width: 72px; margin: 0 auto; }
+    .row-chars figcaption { display: inline-block; }
+    .lineup { display: flex; justify-content: center; align-items: flex-end; flex-wrap: wrap; gap: var(--sp-4); margin-top: var(--sp-6); }
+    .lineup figure { margin: 0; text-align: center; }
+    .lineup svg { width: 104px; margin: 0 auto; }
+    .plus { text-align: center; color: var(--primary); font-size: var(--fs-2xl); font-weight: 800; margin: var(--sp-3) 0; }
+    .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--sp-2); }
+    .sw { background: var(--card); border-radius: var(--r-md); padding: var(--sp-2); }
+    .sw i { display: block; height: 64px; border-radius: var(--r-sm); margin-bottom: var(--sp-2); }
+    .sw b { display: block; font-size: var(--fs-sm); }
+    .sw span { font-size: var(--fs-xs); color: var(--text-sub); font-family: ui-monospace, monospace; }
+    .sw.key { box-shadow: inset 0 0 0 2px var(--text); }
+    .demo { display: flex; flex-wrap: wrap; gap: var(--sp-3); justify-content: center; align-items: center; }
+    .type { background: var(--card); border-radius: var(--r-lg); padding: var(--sp-5); }
+    .type div { display: flex; align-items: baseline; gap: var(--sp-4); padding: var(--sp-2) 0; }
+    .type code { width: 140px; flex: none; font-size: var(--fs-xs); color: var(--text-sub); }
+    .opt-demo { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); max-width: 520px; margin: 0 auto; }
+    .opt-demo div { background: var(--card); border-radius: var(--r-lg); padding: var(--sp-3); display: flex; align-items: center; gap: var(--sp-3); font-weight: 700; }
+    .opt-demo i { font-style: normal; width: 40px; height: 40px; border-radius: var(--r-sm); background: var(--c); color: var(--on-c); display: grid; place-items: center; font-weight: 800; }
+    .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--sp-2); }
+    .rule { background: var(--card); border-radius: var(--r-lg); padding: var(--sp-5); color: var(--text-sub); font-size: var(--fs-sm); }
+    .rule b { display: block; color: var(--text); font-size: var(--fs-md); margin-bottom: var(--sp-1); }
+  </style>
+</head>
+<body>
+<main class="ds">
+  <header>
+    <div class="bob" id="hero-mascot"></div>
+    <h1>퀴즈쇼 디자인 시스템</h1>
+    <p>어두운 바탕 위에 둥근 면과 크림슨 포인트만 남긴 미니멀 UI. 귀여움은 참가자가 직접 꾸미는 아바타가 맡습니다.</p>
+  </header>
+
+  <section>
+    <h2>Avatar System</h2>
+    <p>참가자는 입장할 때 머리, 머리색, 피부, 눈, 수염, 옷, 옷색, 소품 여덟 가지를 골라 전신 2등신 아바타를 만듭니다. 이름은 메타버스처럼 머리 위에 떠요.</p>
+    <div class="lineup" id="lineup"></div>
+    <h3>원클릭 프리셋 — '밤티 되기' 버튼 하나로 이 조합이 적용돼요</h3><div class="row-chars" id="preset"></div>
+    <h3>머리</h3><div class="row-chars" id="p-h"></div>
+    <h3>눈</h3><div class="row-chars" id="p-e"></div>
+    <h3>수염</h3><div class="row-chars" id="p-f"></div>
+    <h3>옷</h3><div class="row-chars" id="p-o"></div>
+    <h3>소품</h3><div class="row-chars" id="p-a"></div>
+    <h3>표정 — 결과에 따라 자동으로 바뀌고, 움직임도 달라져요</h3><div class="row-chars" id="moods"></div>
+  </section>
+
+  <section>
+    <h2>Color</h2>
+    <p>크림슨은 행동과 선택, 버터는 시간과 순위에만. 나머지는 남색 기운이 도는 나이트 그레이가 받칩니다.</p>
+    <h3>메인 · 서브</h3><div class="swatches" id="sw-brand"></div>
+    <h3>중립</h3><div class="swatches" id="sw-neutral"></div>
+    <h3>캐릭터 팔레트 (보기 A~F 배지에도 사용)</h3><div class="swatches" id="sw-char"></div>
+  </section>
+
+  <section>
+    <h2>Type</h2>
+    <p>프리텐다드 하나로, 굵기와 좁은 자간으로 위계를 만듭니다.</p>
+    <div class="type">
+      <div><code>48 / 800</code><span style="font-size:var(--fs-4xl);font-weight:800;letter-spacing:var(--tight)">정답!</span></div>
+      <div><code>28 / 800</code><span style="font-size:var(--fs-2xl);font-weight:800;letter-spacing:var(--tight)">지금 내 순위</span></div>
+      <div><code>22 / 800</code><span style="font-size:var(--fs-xl);font-weight:800;letter-spacing:-.02em">대한민국의 수도는?</span></div>
+      <div><code>18 / 700</code><span style="font-size:var(--fs-lg);font-weight:700">보기 텍스트</span></div>
+      <div><code>14 / 400</code><span class="muted" style="font-size:var(--fs-sm)">보조 설명과 상태 표시</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Component</h2>
+    <p>모서리는 10 · 16 · 24px와 알약형. 그림자 대신 면의 밝기 차이로 층을 나눕니다.</p>
+    <div class="demo">
+      <button class="btn">이 캐릭터로 입장하기</button>
+      <button class="btn secondary">문항 저장</button>
+      <button class="btn ghost">랜덤으로 만들기</button>
+      <button class="btn danger">점수만 초기화</button>
+      <button class="btn" disabled>준비 중</button>
+    </div>
+    <h3>배지</h3>
+    <div class="demo"><span class="pill">퀴즈</span><span class="pill butter">투표</span><span class="pill sub">대기 중</span></div>
+    <h3>보기</h3>
+    <div class="opt-demo">
+      <div class="opt-0"><i>A</i>부산</div><div class="opt-1"><i>B</i>서울</div>
+      <div class="opt-2"><i>C</i>대구</div><div class="opt-3"><i>D</i>인천</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Principles</h2>
+    <div class="rules">
+      <div class="rule"><b>주인공은 아바타</b>UI는 조용히, 아바타만 색과 표정을 가집니다. 이름은 항상 머리 위에.</div>
+      <div class="rule"><b>크림슨은 한 화면에 하나</b>지금 눌러야 할 것, 지금 고른 것에만.</div>
+      <div class="rule"><b>버터는 숫자</b>남은 시간, 1위, 입장 인원처럼 큰 숫자에만.</div>
+      <div class="rule"><b>모이면 바글바글</b>군중은 각자 다른 박자로 들썩이고, 정답은 점프, 오답은 시무룩하게 흔들려요.</div>
+    </div>
+  </section>
+</main>
+<script type="module">
+  import { avatarSVG, mascotSVG, PARTS, PRESETS } from './characters.js';
+  const base = { h: 2, hc: 3, s: 0, e: 0, o: 4, oc: 1, a: 1 };
+  const fig = (svg, label, cls = '') => `<figure class="${cls}">${svg}<figcaption class="nametag">${label}</figcaption></figure>`;
+  document.getElementById('hero-mascot').innerHTML = mascotSVG('happy');
+  for (const k of ['h', 'e', 'f', 'o', 'a'])
+    document.getElementById('p-' + k).innerHTML = PARTS[k].names.map((n, i) => fig(avatarSVG({ ...base, [k]: i, ...(k === 'h' ? { a: 0 } : {}) }), n)).join('');
+  document.getElementById('moods').innerHTML = [['idle', '기본 · 들썩'], ['wow', '두근'], ['happy', '정답 · 점프'], ['sad', '오답 · 흔들'], ['sleep', '미응답']]
+    .map(([m, n]) => `<figure><div class="stage-av">${avatarSVG(base, m)}</div><figcaption class="nametag">${n}</figcaption></figure>`).join('');
+  document.getElementById('preset').innerHTML = fig(avatarSVG(PRESETS['밤티'], 'idle', 'sticker'), '밤티');
+  const crew = [
+    [{ h: 1, hc: 1, s: 1, e: 0, o: 1, oc: 2, a: 1 }, '하은'], [{ h: 4, hc: 0, s: 2, e: 1, o: 3, oc: 1, a: 3 }, '김대리'],
+    [{ h: 2, hc: 3, s: 0, e: 2, o: 4, oc: 0, a: 0 }, '딸기우유'], [{ h: 5, hc: 5, s: 3, e: 0, o: 5, oc: 6, a: 5 }, '민트초코'],
+    [{ h: 3, hc: 4, s: 0, e: 3, o: 2, oc: 4, a: 4 }, '냥냥'], [PRESETS['밤티'], '밤티'], [{ h: 6, hc: 7, s: 0, e: 0, f: 1, o: 0, oc: 1, a: 0 }, '폭탄머리'],
+  ];
+  document.getElementById('lineup').innerHTML = crew.map(([a, n], k) =>
+    `<figure class="bob" style="animation-delay:${k * .2}s">${avatarSVG(a, 'idle', 'sticker')}<figcaption class="nametag">${n}</figcaption></figure>`).join('');
+
+  const cs = getComputedStyle(document.documentElement);
+  const sw = (id, list) => document.getElementById(id).innerHTML = list.map(([v, n, key]) => {
+    const hex = cs.getPropertyValue('--' + v).trim();
+    return `<div class="sw ${key ? 'key' : ''}"><i style="background:${hex}"></i><b>${n}</b><span>--${v} ${hex.toUpperCase()}</span></div>`;
+  }).join('');
+  sw('sw-brand', [['crimson', '크림슨 · 메인', 1], ['crimson-text', '크림슨 글자'], ['butter', '버터 · 서브', 1]]);
+  sw('sw-neutral', [['night-1000', '가장 깊은 배경'], ['night-950', '배경'], ['night-900', '카드'], ['night-850', '올라온 카드'], ['night-800', '입력·눌린 면'], ['night-700', '선'], ['night-500', '비활성'], ['night-400', '보조 텍스트'], ['night-100', '본문']]);
+  sw('sw-char', PARTS.oc.names.map((n, i) => [`char-${i}`, n]));
+</script>
+</body>
+</html>

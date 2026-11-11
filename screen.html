@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>스크린</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="screen">
+  <div class="top">
+    <span class="brand"><svg class="ch ch-idle mascot " viewBox="0 0 100 100" aria-hidden="true" style="color:var(--crimson)"> <g fill="currentColor"><circle cx="50" cy="51" r="40"/></g><g class="ch-eyes"><ellipse cx="38" cy="50" rx="7" ry="8.5" fill="#fff"/><ellipse cx="62" cy="50" rx="7" ry="8.5" fill="#fff"/> <circle cx="39" cy="52" r="3.8" fill="#12131A"/><circle cx="63" cy="52" r="3.8" fill="#12131A"/></g></svg><span id="title">퀴즈쇼</span></span>
+    <span class="progress" id="qpos"></span>
+    <span class="right">
+      <span class="people" id="people"></span>
+      <button class="sound-btn" id="btn-sfx" type="button">효과음</button>
+      <button class="sound-btn" id="btn-bgm" type="button">배경음악</button>
+      <span class="conn" id="conn" title="연결 상태"></span>
+    </span>
+  </div>
+  <div class="stage" id="stage"></div>
+  <script type="module" src="screen.js"></script>
+</body>
+</html>

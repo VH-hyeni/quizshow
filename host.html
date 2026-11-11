@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>진행자</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="host">
+  <!-- 로그인 -->
+  <form class="login" id="login">
+    <h1><svg class="ch ch-idle mascot " viewBox="0 0 100 100" aria-hidden="true" style="color:var(--crimson)"> <g fill="currentColor"><circle cx="50" cy="51" r="40"/></g><g class="ch-eyes"><ellipse cx="38" cy="50" rx="7" ry="8.5" fill="#fff"/><ellipse cx="62" cy="50" rx="7" ry="8.5" fill="#fff"/> <circle cx="39" cy="52" r="3.8" fill="#12131A"/><circle cx="63" cy="52" r="3.8" fill="#12131A"/></g></svg>진행자 로그인</h1>
+    <input type="password" name="pin" placeholder="진행자 PIN" autocomplete="current-password" required>
+    <button class="btn" type="submit">들어가기</button>
+    <div class="msg err" id="login-msg"></div>
+  </form>
+
+  <!-- 진행 화면 -->
+  <div id="app" class="hidden">
+    <div class="topbar">
+      <span class="brand"><svg class="ch ch-idle mascot " viewBox="0 0 100 100" aria-hidden="true" style="color:var(--crimson)"> <g fill="currentColor"><circle cx="50" cy="51" r="40"/></g><g class="ch-eyes"><ellipse cx="38" cy="50" rx="7" ry="8.5" fill="#fff"/><ellipse cx="62" cy="50" rx="7" ry="8.5" fill="#fff"/> <circle cx="39" cy="52" r="3.8" fill="#12131A"/><circle cx="63" cy="52" r="3.8" fill="#12131A"/></g></svg><span id="title">진행자</span></span>
+      <span class="conn" id="conn" title="연결 상태"></span>
+      <span class="links">
+        <a id="link-screen" target="_blank" rel="noopener">스크린 화면 열기</a>
+        <a id="link-join" target="_blank" rel="noopener">참가자 화면 미리보기</a>
+        <a href="#" id="logout">로그아웃</a>
+      </span>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="statusbar">
+          <span class="phase" id="phase">-</span>
+          <span class="muted" id="qpos"></span>
+          <span class="timer" id="timer"></span>
+          <span class="answered" id="answered"></span>
+        </div>
+        <div class="curq" id="curq"></div>
+        <div class="bars" id="bars"></div>
+
+        <button class="btn next" id="next" type="button">-</button>
+        <div class="help">키보드 <code>Space</code> 또는 <code>→</code> 로도 누를 수 있어요</div>
+
+        <div class="row">
+          <button class="btn ghost sm" data-act="close" type="button">응답 마감</button>
+          <button class="btn ghost sm" data-act="reveal" type="button">정답·결과 공개</button>
+          <button class="btn ghost sm" data-act="leaderboard" type="button">순위 보기</button>
+          <button class="btn ghost sm" data-act="lobby" type="button">대기 화면으로</button>
+          <button class="btn ghost sm" data-act="end" type="button">최종 결과</button>
+        </div>
+        <div class="msg" id="msg"></div>
+
+        <h2>상위 10명</h2>
+        <ol class="lb" id="lb"><li class="muted">아직 점수가 없습니다</li></ol>
+
+        <h2>초기화</h2>
+        <div class="row">
+          <button class="btn danger sm" data-act="reset-scores" type="button">점수만 초기화</button>
+          <button class="btn danger sm" data-act="reset-all" type="button">참가자까지 전체 삭제</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>문항 목록 <span class="muted" id="qcount"></span></h2>
+        <ul class="qlist" id="qlist"><li class="muted">문항을 아래에서 올려 주세요</li></ul>
+
+        <h2>문항 편집</h2>
+        <div class="help">
+          빈 줄로 문항을 구분합니다.<br>
+          <code>Q:</code> 퀴즈 문항 · <code>P:</code> 투표 문항(정답 없음)<br>
+          <code>-</code> 보기 · <code>*</code> 정답 보기 · <code>T: 20</code> 제한시간(초, 퀴즈 기본 20초 / 투표 기본 무제한)
+        </div>
+        <textarea id="editor" spellcheck="false"></textarea>
+        <div class="row" style="margin-top:10px">
+          <button class="btn secondary" id="upload" type="button">문항 저장</button>
+          <button class="btn ghost" id="load-server" type="button">저장된 문항 불러오기</button>
+          <button class="btn ghost" id="sample" type="button">예시 넣기</button>
+        </div>
+        <div class="msg" id="edit-msg"></div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="host.js"></script>
+</body>
+</html>
