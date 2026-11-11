@@ -2,10 +2,26 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 import { SUPABASE_URL, SUPABASE_KEY, TITLE } from './config.js';
 
 export { TITLE };
-export const configured = !SUPABASE_URL.includes('YOUR-PROJECT') && !SUPABASE_KEY.startsWith('YOUR-');
+// 주소 끝의 '/', '/rest/v1' 같은 꼬리나 'NEXT_PUBLIC_..=' 같은 앞부분이 같이 복사돼도 바로잡음
+function cleanUrl(raw) {
+  const s = String(raw || '').trim();
+  const m = s.match(/https?:\/\/[a-z0-9-]+\.supabase\.(co|in)/i);
+  if (m) return m[0];
+  const dash = s.match(/supabase\.com\/dashboard\/project\/([a-z0-9]+)/i);   // 대시보드 주소를 복사한 경우
+  if (dash) return `https://${dash[1]}.supabase.co`;
+  try { return new URL(s.slice(s.indexOf('http'))).origin; } catch { return s; }
+}
+function cleanKey(raw) {
+  const s = String(raw || '').trim();
+  return s.includes('=') && /^[A-Z_]+=/.test(s) ? s.slice(s.indexOf('=') + 1).trim() : s;
+}
+const URL_ = cleanUrl(SUPABASE_URL);
+const KEY_ = cleanKey(SUPABASE_KEY);
+
+export const configured = !URL_.includes('YOUR-PROJECT') && !KEY_.startsWith('YOUR-');
 
 export const sb = configured
-  ? createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  ? createClient(URL_, KEY_, { auth: { persistSession: false, autoRefreshToken: false } })
   : null;
 
 export const LABELS = ['A', 'B', 'C', 'D', 'E', 'F'];

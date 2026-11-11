@@ -1,4 +1,5 @@
-import { rpc, $, esc, jitter, configured, showConfigError, watchGame, syncClock, remainingSec, LABELS, TITLE } from './common.js';
+import { rpc, $, esc, jitter, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE } from './common.js';
+import { GAMES, KIND_LABEL, kindOf, fmtPlay } from './questions-format.js';
 import { avatarSVG, normAvatar, randomAvatar, PARTS, PART_KEYS, PRESETS, HAIR, SKIN, CLOTH } from './characters.js';
 
 if (!configured) { showConfigError(); throw new Error('config.js not set'); }
@@ -108,6 +109,7 @@ function renderJoin(force = false) {
       nick = name;
       store.set('qs.nick', name); store.set('qs.lastnick', name); store.set('qs.avatar', JSON.stringify(avatar));
       showMe();
+      updateSocial();
       if (game) render(game);
     } catch (err) {
       form.querySelector('.err').textContent = err.message;
@@ -124,12 +126,13 @@ async function rejoin() {
 function render(g) {
   game = g;
   clearInterval(tick);
+  updateSocial();
   if (!nick) return renderJoin();
   const seq = ++renderSeq;
   switch (g.phase) {
     case 'question':
-    case 'closed':      return renderQuestion(g);
-    case 'reveal':      return renderReveal(g, seq);
+    case 'closed':      return g.question?.kind === 'game' ? renderGame(g, seq) : renderQuestion(g);
+    case 'reveal':      return g.question?.kind === 'game' ? renderGameResult(g, seq) : renderReveal(g, seq);
     case 'leaderboard': return renderRank(g, seq, false);
     case 'end':         return renderRank(g, seq, true);
     default:            return renderLobby(g);
@@ -150,14 +153,15 @@ function optionButtons(g, pick, revealCorrect = null) {
     let cls = `opt opt-${i}`;
     if (pick != null) cls += i === pick ? ' picked' : ' dim';
     if (revealCorrect != null) cls = `opt opt-${i}` + (i === revealCorrect ? ' picked' : ' dim');
+    if (g.question.ox) return `<button class="${cls} ox" data-i="${i}" type="button" aria-label="${i === 0 ? 'O 맞다' : 'X 아니다'}"><span class="ox-mark">${i === 0 ? '○' : '✕'}</span></button>`;
     return `<button class="${cls}" data-i="${i}" type="button"><span class="badge">${LABELS[i]}</span><span class="txt">${esc(o)}</span></button>`;
   }).join('');
 }
 
 function metaRow(g, withTimer = false) {
-  const poll = g.question?.kind === 'poll';
+  const k = g.question ? kindOf(g.question) : 'quiz';
   return `<div class="qmeta">
-    <span class="pill ${poll ? 'butter' : ''}">${poll ? '투표' : '퀴즈'}</span>
+    <span class="pill k-${k}">${KIND_LABEL[k]}</span>
     <span>${g.q_index + 1}번째 문제 (총 ${g.q_total}개)</span>
     ${withTimer ? '<span class="timer"></span>' : ''}
   </div>`;
@@ -170,7 +174,7 @@ function renderQuestion(g) {
   view.innerHTML = `
     ${metaRow(g, true)}
     <div class="qtext">${esc(q.text)}</div>
-    <div class="options">${optionButtons(g, pick)}</div>
+    <div class="options ${q.ox ? 'ox-grid' : ''}">${optionButtons(g, pick)}</div>
     <div class="status"></div>`;
   const status = view.querySelector('.status');
   const btns = [...view.querySelectorAll('.opt')];
@@ -287,6 +291,233 @@ async function renderRank(g, seq, final) {
       ${final ? '<div class="sub">참여해 주셔서 감사합니다</div>' : ''}
     </div>`;
 }
+
+// ---------- 미니게임 ----------
+const playKey = g => `qs.play.${g.q_index}.${g.started_at}`;
+
+function rng(seed) {                 // 모두 같은 배치를 보도록 같은 seed 로 섞음
+  let a = Number(seed) >>> 0;
+  return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+function renderGame(g, seq) {
+  const q = g.question;
+  const info = GAMES[q.game] || GAMES.order;
+  const alive = () => seq === renderSeq;
+  view.innerHTML = `${metaRow(g, true)}
+    <div class="game-head"><div class="game-title">${esc(info.name)}</div><div class="sub">${info.hint}</div></div>
+    <div class="game-area" id="ga"></div>
+    <div class="status" id="gs"></div>`;
+  const ga = $('#ga'), gs = $('#gs');
+  const timerEl = view.querySelector('.timer');
+  tick = setInterval(() => {
+    const r = remainingSec(g);
+    if (timerEl) { timerEl.textContent = r == null ? '' : `${r}초`; timerEl.classList.toggle('urgent', r != null && r <= 5); }
+  }, 250);
+
+  const saved = store.get(playKey(g));
+  if (saved != null) return showPlayed(g, Number(saved), seq);
+  if (g.phase === 'closed') { ga.innerHTML = `<div class="game-big">게임 종료</div>`; gs.textContent = '이번 게임에는 기록이 없어요.'; return; }
+
+  const startAt = parseTs(g.started_at) + 3000;     // 모두 같은 순간에 시작 (3초 카운트다운)
+  const begin = { order: playOrder, reaction: playReaction, tap: playTap }[q.game] || playOrder;
+  const countdown = () => {
+    if (!alive()) return;
+    const left = startAt - serverNow();
+    if (left > 0) {
+      const n = Math.ceil(left / 1000);
+      if (ga.dataset.n !== String(n)) { ga.dataset.n = n; ga.innerHTML = `<div class="game-count">${n}</div>`; }
+      return requestAnimationFrame(countdown);
+    }
+    if (remainingSec(g) === 0) { ga.innerHTML = `<div class="game-big">시간 종료</div>`; return; }
+    begin(g, ga, gs, alive);
+  };
+  countdown();
+}
+
+async function finishPlay(g, value, seq) {
+  store.set(playKey(g), String(value));
+  try {
+    let res = await rpc('submit_game', { p_id: myId, p_value: value });
+    if (res === 'unknown_player') { await rejoin(); res = await rpc('submit_game', { p_id: myId, p_value: value }); }
+    if (res === 'timeout' || res === 'closed') { $('#gs') && ($('#gs').textContent = '아쉽게도 시간이 지나 기록되지 않았어요.'); return; }
+  } catch { /* 네트워크 오류: 아래 화면은 보여 줌 */ }
+  showPlayed(g, value, seq);
+}
+
+async function showPlayed(g, value, seq) {
+  const ga = $('#ga'), gs = $('#gs');
+  if (!ga) return;
+  ga.innerHTML = `<div class="game-done">${meBig('happy', 'hop')}<div class="game-record">${fmtPlay(g.question.game, value)}</div></div>`;
+  gs.textContent = '순위 확인 중…';
+  await jitter(700);
+  if (seq !== renderSeq) return;
+  try {
+    const st = await rpc('my_status', { p_id: myId });
+    if (seq !== renderSeq) return;
+    gs.textContent = st?.play_rank ? `지금까지 ${st.play_rank}위예요! 결과 발표를 기다려 주세요.` : '결과 발표를 기다려 주세요.';
+  } catch { gs.textContent = '결과 발표를 기다려 주세요.'; }
+}
+
+function playOrder(g, ga, gs, alive) {
+  const size = g.question.size || 4, N = size * size;
+  const nums = Array.from({ length: N }, (_, i) => i + 1);
+  const rand = rng(g.question.seed);
+  for (let i = N - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [nums[i], nums[j]] = [nums[j], nums[i]]; }
+  ga.innerHTML = `<div class="next-num">다음 숫자 <b id="nn">1</b></div>
+    <div class="num-grid" style="--n:${size}">${nums.map(v => `<button class="cell" type="button" data-v="${v}">${v}</button>`).join('')}</div>`;
+  let next = 1;
+  const t0 = performance.now();
+  const seq = renderSeq;
+  gs.textContent = '';
+  ga.querySelector('.num-grid').addEventListener('pointerdown', e => {
+    const c = e.target.closest('.cell');
+    if (!c || c.disabled || !alive()) return;
+    e.preventDefault();
+    if (Number(c.dataset.v) === next) {
+      c.classList.add('hit'); c.disabled = true; next++;
+      if (next > N) return finishPlay(g, Math.round(performance.now() - t0), seq);
+      $('#nn').textContent = next;
+    } else {
+      c.classList.remove('miss'); void c.offsetWidth; c.classList.add('miss');
+      navigator.vibrate?.(40);
+    }
+  });
+}
+
+function playReaction(g, ga, gs, alive) {
+  const goAt = parseTs(g.started_at) + 3000 + (g.question.delay_ms || 3000);
+  ga.innerHTML = `<button class="react wait" id="rb" type="button">기다리세요…<small>초록색이 되면 터치!</small></button>`;
+  const rb = $('#rb');
+  const seq = renderSeq;
+  let shownAt = null, done = false;
+  const end = v => { if (done) return; done = true; finishPlay(g, v, seq); };
+  rb.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (done) return;
+    if (shownAt == null) { rb.className = 'react foul'; rb.innerHTML = '부정 출발!<small>너무 빨랐어요</small>'; return end(3000); }
+    end(Math.max(50, Math.round(performance.now() - shownAt)));
+  });
+  const loop = () => {
+    if (!alive() || done) return;
+    if (shownAt == null && serverNow() >= goAt) {
+      rb.className = 'react go'; rb.innerHTML = '지금!';
+      shownAt = performance.now();
+      setTimeout(() => end(3000), 3000);           // 3초 안에 안 누르면 기록 3초
+    }
+    requestAnimationFrame(loop);
+  };
+  loop();
+}
+
+function playTap(g, ga, gs, alive) {
+  const dur = (g.question.duration || 10) * 1000;
+  ga.innerHTML = `<div class="tap-count" id="tc">0</div><button class="tap-btn" id="tb" type="button">눌러!</button><div class="tap-time" id="tt"></div>`;
+  const tb = $('#tb'), tc = $('#tc'), tt = $('#tt');
+  const seq = renderSeq;
+  const endAt = performance.now() + dur;
+  let count = 0, over = false;
+  tb.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (over) return;
+    count++;
+    tc.textContent = count;
+    tb.classList.remove('pop'); void tb.offsetWidth; tb.classList.add('pop');
+  });
+  const loop = () => {
+    if (!alive() || over) return;
+    const left = endAt - performance.now();
+    tt.textContent = `${Math.max(0, left / 1000).toFixed(1)}초`;
+    if (left <= 0) { over = true; tb.disabled = true; tb.textContent = '끝!'; return finishPlay(g, count, seq); }
+    requestAnimationFrame(loop);
+  };
+  loop();
+}
+
+async function renderGameResult(g, seq) {
+  view.innerHTML = `${metaRow(g)}<div class="center">${meBig('wow', 'bob')}<div class="sub">결과를 확인하고 있어요</div></div>`;
+  await jitter(1000);
+  let st = null;
+  try { st = await fetchStatus(); } catch {}
+  if (seq !== renderSeq) return;
+  const info = GAMES[g.question.game] || GAMES.order;
+  const played = st?.play != null;
+  const top3 = played && st.play_rank <= 3;
+  view.innerHTML = `${metaRow(g)}
+    <div class="center">
+      ${meBig(!played ? 'sleep' : top3 ? 'happy' : 'idle', 'hop')}
+      <div class="verdict ${top3 ? 'gold' : played ? '' : 'none'}">${played ? `${st.play_rank}위!` : '기록 없음'}</div>
+      <div class="answer-line">${esc(info.name)} ${played ? `<b>${fmtPlay(g.question.game, st.play)}</b>` : ''}</div>
+      ${st ? `<div class="stats">
+        <div class="stat"><b>${st.score.toLocaleString()}</b><span>누적 점수</span></div>
+        <div class="stat"><b>${st.rank}위</b><span>${st.players}명 중</span></div>
+      </div>` : ''}
+    </div>`;
+}
+
+// ---------- 리액션 · 말풍선 채팅 ----------
+function updateSocial() {
+  const g = game;
+  const playing = g && g.phase === 'question' && g.question?.kind === 'game';   // 게임 중엔 손가락이 바쁘니 숨김
+  const show = !!nick && !playing;
+  $('#social').classList.toggle('hidden', !show);
+  document.body.classList.toggle('has-social', show);
+  const chatOn = g ? g.chat_on !== false : true;
+  $('#chat-toggle').classList.toggle('hidden', !chatOn);
+  if (!chatOn) $('#chat-row').classList.add('hidden');
+}
+
+let socialMsgTimer = null;
+function socialMsg(text) {
+  const el = $('#social-msg');
+  el.textContent = text;
+  clearTimeout(socialMsgTimer);
+  socialMsgTimer = setTimeout(() => (el.textContent = ''), 2200);
+}
+
+async function sendFeed(kind, body) {
+  let r = await rpc('send_feed', { p_id: myId, p_kind: kind, p_body: body });
+  if (r === 'unknown_player') { await rejoin(); r = await rpc('send_feed', { p_id: myId, p_kind: kind, p_body: body }); }
+  return r;
+}
+
+// 댄스: 스크린 속 내 아바타가 3초 동안 춤춰요. 폰에서도 내 아바타가 같이 춤춰요
+function danceHere(d) {
+  document.querySelectorAll('.me-big .stage-av, #me-avatar').forEach(el => {
+    el.classList.remove('dance-d1', 'dance-d2', 'dance-d3'); void el.offsetWidth;
+    el.classList.add(`dance-${d}`);
+    clearTimeout(el._dt);
+    el._dt = setTimeout(() => el.classList.remove(`dance-${d}`), 3000);
+  });
+}
+$('#social').addEventListener('click', async e => {
+  const b = e.target.closest('[data-d]');
+  if (!b) return;
+  b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop');
+  danceHere(b.dataset.d);
+  try {
+    const r = await sendFeed(1, b.dataset.d);
+    if (r === 'ok') socialMsg('스크린에서 내 아바타가 춤추는 중!');
+    else if (r === 'slow') socialMsg('춤이 끝나면 다시 눌러 주세요');
+  } catch {}
+});
+$('#chat-toggle').addEventListener('click', () => {
+  const row = $('#chat-row');
+  row.classList.toggle('hidden');
+  if (!row.classList.contains('hidden')) $('#chat-in').focus();
+});
+$('#chat-row').addEventListener('submit', async e => {
+  e.preventDefault();
+  const text = $('#chat-in').value.trim();
+  if (!text) return;
+  try {
+    const r = await sendFeed(0, text);
+    if (r === 'ok') { $('#chat-in').value = ''; socialMsg('스크린 채팅창에 올라갔어요!'); }
+    else if (r === 'slow') socialMsg('3초 뒤에 다시 보내 주세요');
+    else if (r === 'off') { socialMsg('지금은 채팅이 꺼져 있어요'); $('#chat-row').classList.add('hidden'); }
+    else socialMsg('보내지 못했어요');
+  } catch { socialMsg('보내지 못했어요. 다시 눌러 주세요'); }
+});
 
 // ---------- 시작 ----------
 showMe();

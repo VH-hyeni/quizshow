@@ -1,5 +1,7 @@
 import { rpc, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, LABELS, TITLE, joinUrl } from './common.js';
-import { parseQuestions, toText, SAMPLE } from './questions-format.js';
+import { parseQuestions, toText, SAMPLE, TEMPLATES, KIND_LABEL, kindOf, GAMES, fmtPlay, showOf, SHOW_LABEL } from './questions-format.js';
+import { nextAction as flowNext, hostActions, PHASE_NAME } from './flow.js';
+import { avatarSVG } from './characters.js';
 
 if (!configured) { showConfigError(); throw new Error('config.js not set'); }
 
@@ -56,6 +58,8 @@ function start(qs) {
   setInterval(tick, 250);
   setInterval(pollTally, 1000);
   setInterval(pollBoard, 5000);
+  pollPeople();
+  setInterval(pollPeople, 5000);
 }
 
 // ---------- 문항 편집 ----------
@@ -63,6 +67,17 @@ $('#sample').addEventListener('click', () => {
   if ($('#editor').value.trim() && !confirm('편집 중인 내용을 예시로 바꿀까요?')) return;
   $('#editor').value = SAMPLE; store.set('qs.editor', SAMPLE);
 });
+
+// 유형별 틀 추가 버튼
+document.querySelectorAll('[data-tpl]').forEach(b => b.addEventListener('click', () => {
+  const ed = $('#editor');
+  const cur = ed.value.replace(/\s+$/, '');
+  ed.value = (cur ? cur + '\n\n' : '') + TEMPLATES[b.dataset.tpl] + '\n';
+  store.set('qs.editor', ed.value);
+  ed.focus();
+  ed.scrollTop = ed.scrollHeight;
+  msg($('#edit-msg'), '맨 아래에 틀을 추가했어요. 내용을 고친 뒤 "문항 저장"을 눌러 주세요.', 'ok');
+}));
 
 $('#load-server').addEventListener('click', async () => {
   try {
@@ -96,7 +111,8 @@ function renderQList() {
     <li class="${game && game.q_index === i ? 'cur' : ''}">
       <span class="num">${i + 1}</span>
       <span class="t" title="${esc(q.text)}">${esc(q.text)}</span>
-      <span class="tag ${q.kind === 'poll' ? 'poll' : 'quiz'}">${q.kind === 'poll' ? '투표' : `정답 ${LABELS[q.answer]}`}</span>
+      <span class="tag k-${kindOf(q)}">${KIND_LABEL[kindOf(q)]}${kindOf(q) === 'quiz' ? ` · 정답 ${LABELS[q.answer]}` : kindOf(q) === 'ox' ? ` · ${q.answer === 0 ? 'O' : 'X'}` : ''}</span>
+      ${q.kind !== 'game' ? `<span class="tag k-show">${SHOW_LABEL[showOf(q)]}</span>` : ''}
       <button class="btn ghost sm" type="button" data-start="${i}">시작</button>
     </li>`).join('');
 }
@@ -121,33 +137,22 @@ async function act(fn) {
   finally { busy = false; updateControls(); }
 }
 
-const A = {
-  show: i => act(() => rpc('host_show_question', { p_pin: pin, p_index: i })),
-  close: () => act(() => rpc('host_close', { p_pin: pin })),
-  reveal: () => act(() => rpc('host_reveal', { p_pin: pin })),
-  phase: p => act(() => rpc('host_set_phase', { p_pin: pin, p_phase: p })),
-};
+const A = hostActions(() => pin, act);
+const nextAction = () => flowNext(game, A);
 
-function nextAction() {
-  const g = game;
-  if (!g) return { label: '연결 중…' };
-  const total = g.q_total, i = g.q_index, hasNext = i + 1 < total;
-  const goNext = hasNext
-    ? { label: `${i + 2}번 문제 시작`, run: () => A.show(i + 1) }
-    : { label: '최종 결과 발표', run: () => A.phase('end') };
+// 지금 무슨 상태이고 다음에 뭘 하면 되는지 한 줄로
+function hintFor(g) {
+  if (!g) return '';
+  const k = g.question?.kind;
   switch (g.phase) {
-    case 'lobby':
-      if (!total) return { label: '먼저 문항을 저장해 주세요' };
-      return goNext;
-    case 'question': return { label: '응답 마감', run: A.close };
-    case 'closed': return { label: g.question?.kind === 'poll' ? '투표 결과 공개' : '정답 공개', run: A.reveal };
-    case 'reveal':
-      if (g.question?.kind === 'quiz') return { label: '순위 보기', run: () => A.phase('leaderboard') };
-      return goNext;
-    case 'leaderboard': return goNext;
-    case 'end': return { label: '종료되었습니다' };
+    case 'lobby': return g.q_total ? '참가자들이 QR로 입장하는 중이에요. 다 모이면 위 버튼으로 시작하세요.' : '오른쪽에서 문항을 만들고 "문항 저장"부터 눌러 주세요.';
+    case 'question': return k === 'game' ? '참가자들이 게임 중이에요. 시간이 끝나면 자동으로 종료돼요.' : '참가자들이 답을 고르는 중이에요. 시간이 끝나면 자동으로 마감돼요.';
+    case 'closed': return k === 'poll' ? '마감됐어요. 결과를 공개하면 스크린에 아바타들이 모여요.' : k === 'game' ? '게임이 끝났어요. 결과를 공개하면 스크린에 순위가 나와요.' : '마감됐어요. 정답을 공개하면 스크린에 누가 뭘 골랐는지 나와요.';
+    case 'reveal': return '스크린에서 결과를 보여 주는 중이에요. 다음으로 넘어가세요.';
+    case 'leaderboard': return '스크린에 현재 순위가 나와 있어요.';
+    case 'end': return '행사가 끝났어요. 다시 하려면 아래 "점수만 초기화"를 누르세요.';
   }
-  return { label: '-' };
+  return '';
 }
 
 function updateControls() {
@@ -155,6 +160,7 @@ function updateControls() {
   const btn = $('#next');
   btn.textContent = n.label;
   btn.disabled = busy || !n.run;
+  $('#hint').textContent = hintFor(game);
   const ph = game?.phase;
   document.querySelectorAll('[data-act]').forEach(b => {
     const a = b.dataset.act;
@@ -166,6 +172,12 @@ function updateControls() {
 }
 
 $('#next').addEventListener('click', () => nextAction().run?.());
+
+// 말풍선 채팅 켜기/끄기 (리액션 이모지는 항상 허용)
+$('#chat-toggle').addEventListener('click', () => {
+  if (!game) return;
+  act(() => rpc('host_set_chat', { p_pin: pin, p_on: game.chat_on === false }));
+});
 
 document.addEventListener('keydown', e => {
   if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
@@ -186,14 +198,15 @@ document.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click',
   }
 }));
 
-const PHASE_NAME = { lobby: '대기 중', question: '응답 받는 중', closed: '마감됨', reveal: '결과 공개', leaderboard: '순위 발표', end: '종료' };
 
 function onGame() {
   const g = game;
   $('#phase').textContent = PHASE_NAME[g.phase] || g.phase;
   $('#phase').classList.toggle('live', g.phase === 'question');
+  $('#chat-toggle').textContent = g.chat_on === false ? '채팅 켜기 (지금 꺼짐)' : '채팅 끄기';
   $('#qpos').textContent = g.q_index >= 0 ? `${g.q_index + 1}번째 문제 (총 ${g.q_total}개)` : `문제 ${g.q_total}개 준비됨`;
-  $('#curq').textContent = g.q_index >= 0 && g.question ? g.question.text : '';
+  $('#curq').textContent = g.q_index >= 0 && g.question
+    ? `[${KIND_LABEL[kindOf(g.question)]}] ${g.question.kind === 'game' ? (GAMES[g.question.game]?.name || g.question.text) : g.question.text}` : '';
   if (g.phase !== 'question') { clearTimeout(closeTimer); closeTimer = null; }
   renderQList();
   updateControls();
@@ -229,6 +242,7 @@ function renderBars(t) {
   $('#answered').textContent = `응답 ${t.voted}명 / 참가 ${t.players}명`;
   if (!g || g.q_index < 0 || !g.question || g.phase === 'lobby' && t.q_index < 0) { $('#bars').innerHTML = ''; return; }
   const q = g.question;
+  if (q.kind === 'game') return renderGameBoard(g);
   const ans = questions[g.q_index]?.kind === 'quiz' ? questions[g.q_index]?.answer : null;
   const counts = t.counts || q.options.map(() => 0);
   const max = Math.max(1, ...counts);
@@ -240,6 +254,16 @@ function renderBars(t) {
     </div>`).join('');
 }
 
+async function renderGameBoard(g) {
+  try {
+    const b = await rpc('get_game_board', { p_limit: 5 });
+    if (game !== g) return;
+    $('#bars').innerHTML = `<div class="game-board"><div class="muted">기록 ${b.done}명 / 참가 ${b.players}명</div>${
+      b.top.map(r => `<div class="gb-row"><b>${r.rank}</b><span class="gb-av">${avatarSVG(r.a)}</span><span>${esc(r.n)}</span><span class="s">${fmtPlay(g.question.game, r.v)}</span></div>`).join('')
+      || '<div class="muted">아직 기록이 없어요</div>'}</div>`;
+  } catch {}
+}
+
 async function pollBoard() {
   if (!game || document.hidden) return;
   try {
@@ -249,3 +273,31 @@ async function pollBoard() {
       : '<li class="muted">아직 참가자가 없습니다</li>';
   } catch {}
 }
+
+// ---------- 참가자 목록 · 크게 보일 사람(★) ----------
+let people = [];
+async function pollPeople() {
+  if (document.hidden) return;
+  try { people = await rpc('host_people', { p_pin: pin }); renderPeople(); } catch {}
+}
+function renderPeople() {
+  const q = $('#ppl-search').value.trim();
+  const list = q ? people.filter(p => p.n.includes(q)) : people;
+  const vips = people.filter(p => p.v).length;
+  $('#ppl-count').textContent = people.length ? `(${people.length}명${vips ? ` · ★ ${vips}명` : ''})` : '';
+  $('#ppl').innerHTML = list.length
+    ? list.slice(0, 200).map(p => `<li class="${p.v ? 'on' : ''}">
+        <span class="ppl-av">${avatarSVG(p.a)}</span><span class="ppl-n">${esc(p.n)}</span>
+        <button type="button" class="star" data-vip="${p.id}" aria-pressed="${p.v}" title="${p.v ? '크게 보기 끄기' : '크게 보기'}">${p.v ? '★ 크게' : '☆'}</button></li>`).join('')
+    : `<li class="muted">${q ? '찾는 이름이 없어요' : '아직 참가자가 없습니다'}</li>`;
+}
+$('#ppl-search').addEventListener('input', renderPeople);
+$('#ppl').addEventListener('click', async e => {
+  const b = e.target.closest('[data-vip]');
+  if (!b) return;
+  const p = people.find(x => x.id === b.dataset.vip);
+  if (!p) return;
+  p.v = !p.v; renderPeople();
+  try { await rpc('host_set_vip', { p_pin: pin, p_sid: p.id, p_on: p.v }); }
+  catch (err) { p.v = !p.v; renderPeople(); msg($('#msg'), err.message, 'err'); }
+});

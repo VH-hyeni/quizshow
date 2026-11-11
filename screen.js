@@ -1,4 +1,6 @@
-import { rpc, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, LABELS, TITLE, joinUrl } from './common.js';
+import { rpc, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE, joinUrl } from './common.js';
+import { GAMES, KIND_LABEL, kindOf, fmtPlay, showOf, SHOW_LABEL } from './questions-format.js';
+import { nextAction, hostActions } from './flow.js';
 import { sound, sfx, bgm } from './sound.js';
 import { avatarSVG, mascotSVG } from './characters.js';
 
@@ -65,7 +67,9 @@ function render(g) {
 
   if (!['question', 'closed', 'reveal'].includes(g.phase)) stage.classList.remove('crowd-mode');
   if (g.phase === 'lobby') return renderLobby();
-  if (['question', 'closed', 'reveal'].includes(g.phase)) return renderQuestion(g);
+  updateCtrl();
+  $('#chatpanel').classList.toggle('off', g.chat_on === false);
+  if (['question', 'closed', 'reveal'].includes(g.phase)) return g.question?.kind === 'game' ? renderGameScreen(g) : renderQuestion(g);
   if (g.phase === 'leaderboard' || g.phase === 'end') return renderBoard(g.phase === 'end');
 }
 
@@ -91,7 +95,39 @@ function member(p, mood, delay = 0) {
   d.innerHTML = `<div class="pc-body mood-${mood}">${avatarSVG(p.a, mood)}</div><span class="pc-name"></span>`;
   d.querySelector('.pc-name').textContent = p.n;
   d.title = p.n;
+  if (p.id) d.dataset.pid = p.id;     // 댄스를 출 때 이 사람을 찾는 표시
+  if (p.v) d.classList.add('vip');    // 진행자가 지정한 '크게 보일 사람'
+  d.dataset.mood = mood;
+  d._a = p.a;
   return d;
+}
+
+function setMood(el, mood) {
+  if (el.dataset.mood === mood) return;
+  el.dataset.mood = mood;
+  const body = el.querySelector('.pc-body');
+  body.className = `pc-body mood-${mood}`;
+  body.innerHTML = avatarSVG(el._a, mood);
+  el.style.setProperty('--dur', `${(mood === 'happy' ? 0.7 : mood === 'sad' ? 2.2 : 1.1) + Math.random() * 0.5}s`);
+}
+
+// 사람 목록에 맞춰 칸 안의 아바타를 더하고 빼기 (이미 있는 사람은 그대로 두어 자연스럽게 이동)
+function syncCrowd(box, people, mood, kind = 'card') {
+  const m = box._m || (box._m = new Map());
+  const want = new Set(people.map(p => p.id));
+  for (const [id, el] of m) if (!want.has(id)) { el.remove(); m.delete(id); }
+  let k = 0;
+  for (const p of people) {
+    const el = m.get(p.id);
+    if (el) setMood(el, mood);
+    else { const d = member(p, mood, Math.min(1.2, k++ * 0.03)); m.set(p.id, d); box.append(d); }
+  }
+  const w = box.clientWidth - 16, h = box.clientHeight - 8;
+  const n = Math.max(1, people.length + people.filter(p => p.v).length * 1.6);   // 크게 보일 사람(1.6배)은 자리를 더 차지
+  const size = kind === 'spect'
+    ? Math.max(18, Math.min(h * (people.some(p => p.v) ? 0.36 : 0.58), Math.floor(Math.sqrt((w * h) / (n * 1.7)) * 0.95)))
+    : Math.max(22, Math.min(h * (people.some(p => p.v) ? 0.34 : 0.4), Math.floor(Math.sqrt((w * h) / (n * 1.75)) * 0.92)));
+  box.style.setProperty('--s', `${size}px`);
 }
 
 // ---------- 대기실 ----------
@@ -165,39 +201,47 @@ function renderQuestion(g) {
     view = key;
     stage.innerHTML = `
       <div class="qhead">
-        <div class="qtext">${esc(q.text)}</div>
+        <div class="qtext"><span class="kind-pill k-${kindOf(q)}">${KIND_LABEL[kindOf(q)]}</span>${showOf(q) === 'hidden' ? '<span class="kind-pill k-secret">비공개</span>' : ''}${esc(q.text)}</div>
         <div class="clock ${q.time_limit ? '' : 'hidden'}" id="clock" aria-label="남은 시간"><span></span></div>
       </div>
       <div class="answers-count" id="ans"></div>
-      <div class="sopts">
+      <div class="sopts ${q.ox ? 'ox' : ''}">
         ${q.options.map((o, i) => `
           <div class="sopt opt-${i}" data-i="${i}">
             <div class="fill" style="width:0"></div>
             <div class="head">
-              <span class="badge">${LABELS[i]}</span>
-              <span class="txt">${esc(o)}</span>
+              <span class="badge">${q.ox ? (i === 0 ? '○' : '✕') : LABELS[i]}</span>
+              <span class="txt">${q.ox ? (i === 0 ? '맞아요' : '아니에요') : esc(o)}</span>
               <span class="cnt"></span>
               <button class="zoom-btn" type="button" data-zoom="${i}" aria-label="${LABELS[i]} 보기를 고른 사람 크게 보기" title="크게 보기 (숫자키 ${i + 1})">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M15.5 15.5L21 21" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/><path d="M10.5 7.5v6M7.5 10.5h6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
               </button>
             </div>
             <div class="crowd"></div>
+            <div class="pct"></div>
           </div>`).join('')}
       </div>
-      <div class="banner" id="banner"></div>`;
+      <div class="banner" id="banner"></div>
+      <div class="spectators" id="spect"><span class="spec-label">구경 중 <b>0</b>명</span><div class="spec-crowd"></div></div>`;
   }
   const opts = [...stage.querySelectorAll('.sopt')];
   opts.forEach((el, i) => {
     const isCorrect = g.phase === 'reveal' && g.correct === i;
     el.classList.toggle('correct', isCorrect);
     el.classList.toggle('dim', g.phase === 'reveal' && g.correct != null && !isCorrect);
-    el.querySelector('.badge').textContent = isCorrect ? '✓' : LABELS[i];
+    el.querySelector('.badge').textContent = isCorrect ? '✓' : q.ox ? (i === 0 ? '○' : '✕') : LABELS[i];
   });
-  const showCrowd = g.phase === 'reveal' || q.kind === 'poll';
+  // 공개 방식: live = 고르는 즉시 아바타 이동 · reveal = 정답 공개 때 · hidden = 끝까지 비공개(인원수 막대만)
+  const mode = showOf(q);
+  const showCrowd = crowdVisible(g);
+  const showBars = mode === 'hidden' && g.phase === 'reveal';
   stage.querySelector('.sopts').classList.toggle('show-crowd', showCrowd);
-  stage.classList.toggle('crowd-mode', showCrowd);
+  stage.querySelector('.sopts').classList.toggle('show-bars', showBars);
+  stage.classList.toggle('crowd-mode', showCrowd || showBars);
+  $('#spect .spec-label').firstChild.textContent = mode === 'hidden' ? '참가자 ' : '구경 중 ';
   $('#banner').textContent =
     g.phase === 'closed' ? '응답 마감' :
+    g.phase === 'reveal' && mode === 'hidden' ? '누가 뭘 골랐는지는 비밀이에요' :
     g.phase === 'reveal' && q.kind === 'poll' ? '투표 결과' : '';
 
   const clock = $('#clock');
@@ -215,7 +259,7 @@ function renderQuestion(g) {
   };
   tickClock();
 
-  const showCounts = showCrowd;
+  const showCounts = showCrowd || g.phase === 'reveal' || mode === 'live';
   const load = async () => {
     try {
       const t = await rpc('get_tally');
@@ -223,14 +267,27 @@ function renderQuestion(g) {
       if (t.q_index !== g.q_index) return;
       $('#ans').innerHTML = `<b>${t.voted}</b>명 응답 <span>/ ${t.players}명</span>`;
       if (showCounts && t.counts) {
-        opts.forEach((el, i) => { el.querySelector('.cnt').textContent = `${t.counts[i]}명`; });
-        if (showCrowd) await loadCrowd(g, opts);
+        const total = Math.max(1, t.counts.reduce((a, b) => a + b, 0));
+        opts.forEach((el, i) => {
+          el.querySelector('.cnt').textContent = `${t.counts[i]}명`;
+          el.querySelector('.fill').style.width = `${(t.counts[i] / total) * 100}%`;
+          const pct = el.querySelector('.pct');
+          if (pct) pct.textContent = `${Math.round((t.counts[i] / total) * 100)}%`;
+        });
       }
+      await loadCrowd(g, opts);
     } catch {}
   };
   load();
   let n = 0;
   tallyTimer = setInterval(() => { tickClock(); if (++n % 4 === 0) load(); }, 250);
+}
+
+// 보기 칸에 아바타를 모아 보여 줄지 (문항의 공개 방식에 따름)
+function crowdVisible(g) {
+  const mode = showOf(g.question || {});
+  if (g.question?.kind === 'game' || mode === 'hidden') return false;
+  return mode === 'live' || g.phase === 'reveal';
 }
 
 // ---------- 돋보기: 한 보기를 고른 사람들만 화면 가득 크게 ----------
@@ -299,40 +356,32 @@ stage.addEventListener('click', e => {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') return closeZoom();
   const n = Number(e.key);
-  const ready = game && (game.phase === 'reveal' || game.question?.kind === 'poll') && ['question', 'closed', 'reveal'].includes(game.phase);
+  const ready = game && ['question', 'closed', 'reveal'].includes(game.phase) && crowdVisible(game);
   if (n >= 1 && n <= 6 && ready && game.question.options[n - 1] != null) {
     if (zoomed === n - 1) closeZoom(); else openZoom(n - 1);
   }
 });
 
-// 보기마다 그 보기를 고른 사람들의 캐릭터를 모아 보여 줌
+// 보기마다 고른 사람들을 모으고, 아직 안 고른 사람은 아래 구경꾼 줄에 세움
 async function loadCrowd(g, opts) {
   const list = await rpc('get_crowd');
   if (game !== g) return;
   const groups = opts.map(() => []);
-  list.forEach(p => { if (groups[p.c]) groups[p.c].push(p); });
+  const spect = [];
+  list.forEach(p => (p.c != null && groups[p.c] ? groups[p.c] : spect).push(p));
   const mood = i => g.phase !== 'reveal' ? 'idle'
     : g.question.kind === 'poll' || g.correct == null ? 'happy'
     : i === g.correct ? 'happy' : 'sad';
   crowdState = { g, groups, mood };
   if (zoomed != null) paintZoom();
-  opts.forEach((el, i) => {
-    const crowd = el.querySelector('.crowd');
-    const people = groups[i];
-    const key = `${mood(i)}:${people.length}`;
-    if (crowd.dataset.key === key) return;
-    const fresh = crowd.dataset.mood !== mood(i);
-    crowd.dataset.key = key; crowd.dataset.mood = mood(i);
-    // 인원 수에 맞춰 캐릭터 크기 결정
-    const { width: w, height: h } = crowd.getBoundingClientRect();
-    const n = Math.max(1, people.length);
-    // 이름표(머리 위)까지 포함한 한 칸의 높이는 너비의 약 1.7배
-    const size = Math.max(22, Math.min(h * 0.4, Math.floor(Math.sqrt((w * h) / (n * 1.75)) * 0.92)));
-    crowd.style.setProperty('--s', `${size}px`);
-    const have = fresh ? 0 : crowd.children.length;
-    if (fresh) crowd.innerHTML = '';
-    people.slice(have).forEach((p, k) => crowd.append(member(p, mood(i), have ? 0 : Math.min(1.4, k * 0.03))));
-  });
+  const showCrowd = crowdVisible(g);
+  opts.forEach((el, i) => syncCrowd(el.querySelector('.crowd'), showCrowd ? groups[i] : [], mood(i)));
+  const sp = $('#spect');
+  if (sp) {
+    sp.querySelector('.spec-label b').textContent = spect.length;
+    sp.classList.toggle('none', !spect.length);
+    syncCrowd(sp.querySelector('.spec-crowd'), spect, g.phase === 'reveal' ? 'sleep' : 'idle', 'spect');
+  }
 }
 
 // ---------- 순위 ----------
@@ -349,7 +398,7 @@ async function renderBoard(final) {
     if (!lb.length) { board.insertAdjacentHTML('beforeend', `<div class="empty">아직 참가자가 없어요</div>`); return; }
     // 10위부터 1위 순서로 등장
     board.insertAdjacentHTML('beforeend', lb.map((r, idx) => `
-      <div class="r ${r.rank <= 3 ? `top${r.rank}` : ''}" style="animation-delay:${delay + (lb.length - 1 - idx) * 0.12}s">
+      <div class="r ${r.rank <= 3 && r.score > 0 ? `top${r.rank}` : ''}" style="animation-delay:${delay + (lb.length - 1 - idx) * 0.12}s">
         <span class="rk">${r.rank}</span>
         <span class="av">${avatarSVG(r.avatar, r.rank === 1 ? 'happy' : 'idle')}</span>
         <span class="nm">${esc(r.nickname)}</span>
@@ -358,6 +407,172 @@ async function renderBoard(final) {
   } catch {
     stage.innerHTML = `<div class="empty">순위를 불러오지 못했어요. 진행자 화면에서 다시 시도해 주세요.</div>`;
   }
+}
+
+// ---------- 미니게임 화면 ----------
+function renderGameScreen(g) {
+  const q = g.question;
+  const info = GAMES[q.game] || GAMES.order;
+  const key = `g:${g.q_index}:${g.started_at}`;
+  if (view !== key) {
+    view = key;
+    stage.classList.remove('crowd-mode');
+    stage.innerHTML = `
+      <div class="qhead">
+        <div class="qtext"><span class="kind-pill k-game">미니게임</span>${esc(info.name)}<div class="game-hint">${esc(info.hint)}${q.game === 'order' ? ` · 1부터 ${(q.size || 4) ** 2}까지` : q.game === 'tap' ? ` · ${q.duration || 10}초 동안` : ''}</div></div>
+        <div class="clock" id="clock" aria-label="남은 시간"><span></span></div>
+      </div>
+      <div class="game-stage" id="gstage">
+        <div class="game-countdown hidden" id="gcount"></div>
+        <div class="game-live" id="glive"></div>
+      </div>`;
+  }
+  const startAt = parseTs(g.started_at) + 3000;
+  const clock = $('#clock'), gcount = $('#gcount');
+  let lastN = null;
+  const tickG = () => {
+    const r = g.phase === 'question' ? remainingSec(g) : 0;
+    clock.querySelector('span').textContent = r;
+    clock.style.setProperty('--p', Math.max(0, r / (q.time_limit || 1)));
+    clock.classList.toggle('urgent', r <= 5);
+    const left = startAt - serverNow();
+    if (g.phase === 'question' && left > -900) {
+      const n = left > 0 ? String(Math.ceil(left / 1000)) : '시작!';
+      gcount.classList.remove('hidden');
+      if (n !== lastN) { lastN = n; gcount.textContent = n; gcount.classList.remove('pop'); void gcount.offsetWidth; gcount.classList.add('pop'); if (left > 0) sfx.tick(false); }
+    } else gcount.classList.add('hidden');
+    if (g.phase === 'question' && r === 0 && !timeupPlayed) { timeupPlayed = true; bgm.stop(); sfx.timeup(); }
+  };
+  tickG();
+  const load = async () => {
+    try {
+      const b = await rpc('get_game_board', { p_limit: g.phase === 'reveal' ? 10 : 8 });
+      if (game !== g) return;
+      setPeople(b.players);
+      paintGameBoard(g, b);
+    } catch {}
+  };
+  load();
+  let n = 0;
+  tallyTimer = setInterval(() => { tickG(); if (++n % 4 === 0) load(); }, 250);
+}
+
+function paintGameBoard(g, b) {
+  const q = g.question, live = $('#glive');
+  if (!live) return;
+  const fmt = v => fmtPlay(q.game, v);
+  if (g.phase === 'reveal') {
+    const [p1, p2, p3] = [1, 2, 3].map(r => b.top.find(x => x.rank === r) || null);
+    const pod = (p, place) => p ? `<div class="pod pod-${place}"><span class="pod-name">${esc(p.n)}</span><div class="pod-av">${avatarSVG(p.a, 'happy')}</div>
+        <div class="pod-block"><b>${place}</b><span>${fmt(p.v)}</span></div></div>` : `<div class="pod pod-${place} empty"><div class="pod-block"><b>${place}</b></div></div>`;
+    const rest = b.top.filter(x => x.rank > 3);
+    const key = JSON.stringify(b.top.map(x => [x.n, x.v]));
+    if (live.dataset.key === key) return;
+    live.dataset.key = key;
+    live.innerHTML = b.top.length ? `<div class="podium">${pod(p2, 2)}${pod(p1, 1)}${pod(p3, 3)}</div>
+      ${rest.length ? `<div class="game-rest">${rest.map(r => `<div class="gr"><b>${r.rank}</b><span class="gr-av">${avatarSVG(r.a)}</span><span class="nm">${esc(r.n)}</span><span class="v">${fmt(r.v)}</span></div>`).join('')}</div>` : ''}`
+      : `<div class="empty">기록이 없어요</div>`;
+    return;
+  }
+  const playing = g.phase === 'question' && q.game === 'tap' && !b.done;
+  live.innerHTML = `<div class="game-progress"><b>${b.done}</b>명 기록 <span>/ ${b.players}명</span></div>
+    ${playing ? `<div class="tap-hype">광클 중!!</div>` : `<div class="game-live-list">${b.top.map(r => `<div class="gl"><b>${r.rank}</b><span class="gl-av">${avatarSVG(r.a)}</span><span class="nm">${esc(r.n)}</span><span class="v">${fmt(r.v)}</span></div>`).join('')}</div>`}
+    ${g.phase === 'closed' ? '<div class="banner">게임 종료! 결과를 기다려 주세요</div>' : ''}`;
+}
+
+// ---------- 스크린에서 바로 진행하기 (진행자 PIN 필요) ----------
+let ctrlPin = (() => { try { return localStorage.getItem('qs.screenpin'); } catch { return null; } })();
+let ctrlBusy = false;
+const ctrlA = hostActions(() => ctrlPin, async fn => {
+  if (ctrlBusy) return;
+  ctrlBusy = true; updateCtrl();
+  try { await fn(); } catch (err) { $('#ctrl-msg').textContent = err.message; }
+  finally { ctrlBusy = false; updateCtrl(); }
+});
+
+function updateCtrl() {
+  const box = $('#ctrl');
+  if (!box) return;
+  box.classList.toggle('unlocked', !!ctrlPin);
+  if (!ctrlPin) return;
+  const n = nextAction(game, ctrlA);
+  const b = $('#ctrl-next');
+  b.textContent = `${n.label} ▶`;
+  b.disabled = ctrlBusy || !n.run;
+}
+
+$('#ctrl-open').addEventListener('click', () => {
+  if (ctrlPin) return;
+  $('#ctrl').classList.toggle('asking');
+  if ($('#ctrl').classList.contains('asking')) $('#ctrl-pin').focus();
+});
+$('#ctrl-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const p = $('#ctrl-pin').value.trim();
+  try {
+    await rpc('host_check', { p_pin: p });
+    ctrlPin = p;
+    try { localStorage.setItem('qs.screenpin', p); } catch {}
+    $('#ctrl').classList.remove('asking');
+    $('#ctrl-msg').textContent = '';
+    $('#ctrl-pin').value = '';
+    updateCtrl();
+  } catch (err) { $('#ctrl-msg').textContent = err.message; }
+});
+$('#ctrl-next').addEventListener('click', () => nextAction(game, ctrlA).run?.());
+$('#ctrl-lock').addEventListener('click', () => {
+  ctrlPin = null;
+  try { localStorage.removeItem('qs.screenpin'); } catch {}
+  updateCtrl();
+});
+document.addEventListener('keydown', e => {
+  if (!ctrlPin || document.activeElement?.tagName === 'INPUT') return;
+  if (e.code === 'Space' || e.key === 'ArrowRight') { e.preventDefault(); nextAction(game, ctrlA).run?.(); }
+});
+if (ctrlPin) rpc('host_check', { p_pin: ctrlPin }).catch(() => { ctrlPin = null; try { localStorage.removeItem('qs.screenpin'); } catch {} updateCtrl(); });
+
+// ---------- 말풍선 채팅 · 리액션 ----------
+let feedAfter = null;
+async function pollFeed() {
+  if (document.hidden) return;
+  try {
+    const f = await rpc('get_feed', { p_after: feedAfter ?? 0 });
+    if (feedAfter == null) { feedAfter = f.last; return; }      // 화면을 연 순간 이전 것은 건너뜀
+    f.items.forEach(showFeed);
+    if (f.items.length) feedAfter = f.items.at(-1).k;
+  } catch {}
+}
+setInterval(pollFeed, 800);
+
+function findAvatars(id) {
+  return [...document.querySelectorAll(`.pc[data-pid="${id}"]`)].filter(el => el.offsetParent !== null);
+}
+
+function showFeed(it) {
+  if (it.t === 1) {
+    // 댄스: 화면에 보이는 그 사람 아바타가 3초 동안 춤춤
+    findAvatars(it.id).forEach(el => {
+      const body = el.querySelector('.pc-body');
+      body.classList.remove('dance-d1', 'dance-d2', 'dance-d3'); void body.offsetWidth;
+      body.classList.add(`dance-${it.b}`);
+      el.classList.add('dancing');
+      clearTimeout(el._dt);
+      el._dt = setTimeout(() => { body.classList.remove(`dance-${it.b}`); el.classList.remove('dancing'); }, 3000);
+    });
+    return;
+  }
+  // 채팅: 오른쪽 채팅창에 쌓기
+  const list = $('#cp-list');
+  const row = document.createElement('div');
+  row.className = 'cp-msg' + (it.v ? ' vip' : '');
+  row.innerHTML = `<span class="cp-av">${avatarSVG(it.a)}</span><div class="cp-body"><b></b><span></span></div>`;
+  row.querySelector('b').textContent = it.n;
+  row.querySelector('.cp-body span').textContent = it.b;
+  list.append(row);
+  while (list.children.length > 40) list.firstElementChild.remove();
+  list.scrollTop = list.scrollHeight;
+  // 그 사람이 화면에 있으면 잠깐 반짝
+  findAvatars(it.id).forEach(el => { el.classList.remove('spoke'); void el.offsetWidth; el.classList.add('spoke'); });
 }
 
 syncClock();

@@ -13,6 +13,19 @@
     <span class="conn" id="conn" title="연결 상태"></span>
     <span class="me hidden" id="me"><span class="me-avatar" id="me-avatar"></span><span id="me-name"></span><button id="rename" type="button">닉네임 변경</button></span>
   </header>
+  <nav class="social hidden" id="social" aria-label="댄스와 채팅">
+    <form class="chat-row hidden" id="chat-row" autocomplete="off">
+      <input id="chat-in" maxlength="40" placeholder="스크린에 띄울 한마디 (40자)" enterkeyhint="send" aria-label="채팅 메시지">
+      <button class="btn sm" type="submit">보내기</button>
+    </form>
+    <div class="react-row">
+      <button type="button" data-d="d1">댄스 1<small>흔들흔들</small></button>
+      <button type="button" data-d="d2">댄스 2<small>점프 스핀</small></button>
+      <button type="button" data-d="d3">댄스 3<small>꿀렁 웨이브</small></button>
+      <button type="button" class="chat-btn" id="chat-toggle" aria-label="채팅 열기">💬</button>
+    </div>
+    <div class="social-msg" id="social-msg" role="status"></div>
+  </nav>
   <main id="view">
     <div class="center"><div class="muted">불러오는 중…</div></div>
   </main>

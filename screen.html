@@ -18,7 +18,28 @@
       <span class="conn" id="conn" title="연결 상태"></span>
     </span>
   </div>
-  <div class="stage" id="stage"></div>
+  <div class="main-row">
+    <div class="stage" id="stage"></div>
+    <aside class="chatpanel" id="chatpanel" aria-label="실시간 채팅">
+      <div class="cp-head"><span class="cp-dot"></span>실시간 채팅</div>
+      <div class="cp-list" id="cp-list" aria-live="polite"></div>
+      <div class="cp-foot">폰 아래 💬 버튼으로 참여하세요</div>
+    </aside>
+  </div>
+
+  <!-- 스크린에서 바로 진행하기: 평소엔 거의 안 보이고, 마우스를 올리면 나타나요 -->
+  <div class="ctrl" id="ctrl">
+    <form class="ctrl-ask" id="ctrl-form" autocomplete="off">
+      <input id="ctrl-pin" type="password" placeholder="진행자 PIN" aria-label="진행자 PIN">
+      <button class="btn sm" type="submit">확인</button>
+    </form>
+    <div class="ctrl-live">
+      <button class="btn" id="ctrl-next" type="button">다음 ▶</button>
+      <button class="btn ghost sm" id="ctrl-lock" type="button" title="이 화면에서 진행 기능 잠그기">잠금</button>
+    </div>
+    <button class="ctrl-open" id="ctrl-open" type="button">진행</button>
+    <div class="ctrl-msg" id="ctrl-msg" role="status"></div>
+  </div>
   <script type="module" src="screen.js"></script>
 </body>
 </html>
