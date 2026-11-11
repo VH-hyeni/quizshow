@@ -173,7 +173,13 @@ function updateControls() {
 
 $('#next').addEventListener('click', () => nextAction().run?.());
 
-// 말풍선 채팅 켜기/끄기 (리액션 이모지는 항상 허용)
+// 채팅 지우기 (스크린 채팅창도 비워짐). 채팅은 이 버튼이나 초기화 전까지 계속 남아요
+$('#chat-clear').addEventListener('click', () => {
+  if (confirm('지금까지의 채팅을 모두 지울까요? 스크린 채팅창도 비워져요.'))
+    act(() => rpc('host_clear_chat', { p_pin: pin }));
+});
+
+// 채팅 켜기/끄기 (댄스는 항상 허용)
 $('#chat-toggle').addEventListener('click', () => {
   if (!game) return;
   act(() => rpc('host_set_chat', { p_pin: pin, p_on: game.chat_on === false }));

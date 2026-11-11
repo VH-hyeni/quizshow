@@ -18,6 +18,11 @@ input, textarea { font: inherit; color: inherit; }
 .muted { color: var(--text-sub); }
 h1, h2, h3 { letter-spacing: var(--tight); }
 
+/* 게임 느낌: 참가자 폰과 스크린은 픽셀 폰트. 진행자 화면은 읽기 편하게 기본 글꼴 유지.
+   픽셀 글꼴은 자간을 좁히면 글자가 뭉개져서 자간은 0으로 고정 */
+body.player, body.screen { font-family: var(--font-pixel); }
+.player *, .screen * { letter-spacing: 0 !important; }
+
 /* ---------- 아바타 & 모션 ---------- */
 .ch, .av { display: block; width: 100%; height: auto; overflow: visible; }
 .ch-idle .ch-eyes { transform-box: fill-box; transform-origin: center; animation: blink 4.6s infinite; }
@@ -286,7 +291,8 @@ h1, h2, h3 { letter-spacing: var(--tight); }
 .screen .lobby h1 { font-size: 7vh; font-weight: 800; margin: 0 0 1.5vh; line-height: 1.15; }
 .screen .lobby .count { font-size: 2.6vh; color: var(--text-sub); }
 .screen .lobby .count b { font-size: 6vh; font-weight: 800; letter-spacing: var(--tight); color: var(--accent); margin-right: .6vh; }
-.screen .guests { --s: 6.4vh; display: flex; flex-wrap: wrap; gap: 1.2vh .4vh; margin-top: 3vh; max-height: 42vh; overflow: hidden; }
+.screen .guests { --s: 6.4vh; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1.2vh .4vh; margin-top: 3vh; max-height: 46vh; overflow: hidden;
+  -webkit-mask-image: linear-gradient(#000 78%, transparent); mask-image: linear-gradient(#000 78%, transparent); }
 
 /* 문항 */
 .screen .qhead { display: flex; align-items: center; gap: 3vw; }
@@ -491,7 +497,8 @@ h1, h2, h3 { letter-spacing: var(--tight); }
 .screen .game-progress { font-size: 2.8vh; color: var(--text-sub); }
 .screen .game-progress b { font-size: 5vh; color: var(--text); font-weight: 800; margin-right: .6vh; }
 .screen .game-live-list { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2vh 2vw; }
-.screen .gl, .screen .gr { display: flex; align-items: center; gap: 1.6vh; background: var(--card); border-radius: var(--r-md); padding: 1vh 2vh; font-size: 2.8vh; font-weight: 700; animation: rise var(--dur-slow) var(--ease) both; }
+.screen .gl, .screen .gr { display: flex; align-items: center; gap: 1.6vh; background: var(--card); border-radius: var(--r-md); padding: 1vh 2vh; font-size: 2.8vh; font-weight: 700; }
+.screen .gl.new, .screen .gr { animation: rise var(--dur-slow) var(--ease) both; }
 .screen .gl b, .screen .gr b { width: 4vh; text-align: center; color: var(--accent); font-weight: 800; }
 .screen .gl-av, .screen .gr-av { width: 4.2vh; flex: none; }
 .screen .gl .nm, .screen .gr .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -598,10 +605,10 @@ h1, h2, h3 { letter-spacing: var(--tight); }
 @keyframes spoke { 0%, 60% { color: var(--accent); transform: scale(1.25); } 100% { transform: none; } }
 
 /* =====================================================================
-   진행자가 지정한 '크게 보일 사람' (1.6배 + 금색 이름)
+   진행자가 지정한 '크게 보일 사람' (2배 + 금색 이름)
    ===================================================================== */
-.screen .pc.vip { width: calc(var(--s, 48px) * 1.6); z-index: 6; }
-.screen .pc.vip .pc-name { color: var(--accent); font-size: max(12px, calc(var(--s, 48px) * .3)); max-width: calc(var(--s, 48px) * 2.2); }
+.screen .pc.vip { width: calc(var(--s, 48px) * 2); z-index: 6; }
+.screen .pc.vip .pc-name { color: var(--accent); font-size: max(12px, calc(var(--s, 48px) * .34)); max-width: calc(var(--s, 48px) * 2.6); }
 .screen .pc.vip .pc-name::before { content: '★ '; }
 
 /* =====================================================================
@@ -619,6 +626,7 @@ h1, h2, h3 { letter-spacing: var(--tight); }
 .cp-list { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; padding: 1vh 1.4vh; display: flex; flex-direction: column; gap: 1vh; }
 .cp-list:empty::after { content: '아직 채팅이 없어요'; margin: auto; color: var(--text-off); font-size: 1.8vh; }
 .cp-msg { display: flex; align-items: flex-start; gap: 1vh; animation: rise .35s var(--ease) both; }
+.cp-msg.old { animation: none; }
 .cp-av { flex: none; width: 3.4vh; }
 .cp-body { min-width: 0; font-size: max(14px, 1.9vh); line-height: 1.35; word-break: keep-all; overflow-wrap: anywhere; }
 .cp-body b { display: block; font-size: .82em; color: var(--text-sub); font-weight: 700; }

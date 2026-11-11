@@ -123,10 +123,10 @@ function syncCrowd(box, people, mood, kind = 'card') {
     else { const d = member(p, mood, Math.min(1.2, k++ * 0.03)); m.set(p.id, d); box.append(d); }
   }
   const w = box.clientWidth - 16, h = box.clientHeight - 8;
-  const n = Math.max(1, people.length + people.filter(p => p.v).length * 1.6);   // 크게 보일 사람(1.6배)은 자리를 더 차지
+  const n = Math.max(1, people.length + people.filter(p => p.v).length * 3);   // 크게 보일 사람(2배 = 면적 4배)은 자리를 더 차지
   const size = kind === 'spect'
-    ? Math.max(18, Math.min(h * (people.some(p => p.v) ? 0.36 : 0.58), Math.floor(Math.sqrt((w * h) / (n * 1.7)) * 0.95)))
-    : Math.max(22, Math.min(h * (people.some(p => p.v) ? 0.34 : 0.4), Math.floor(Math.sqrt((w * h) / (n * 1.75)) * 0.92)));
+    ? Math.max(18, Math.min(h * (people.some(p => p.v) ? 0.3 : 0.58), Math.floor(Math.sqrt((w * h) / (n * 1.7)) * 0.95)))
+    : Math.max(22, Math.min(h * (people.some(p => p.v) ? 0.27 : 0.4), Math.floor(Math.sqrt((w * h) / (n * 1.75)) * 0.92)));
   box.style.setProperty('--s', `${size}px`);
 }
 
@@ -167,7 +167,7 @@ async function renderLobby() {
       info.recent.slice().reverse().forEach(r => {
         if (shownNames.has(r.id)) return;
         shownNames.add(r.id);
-        box.prepend(member({ a: r.a, n: r.n }, 'idle', lobbyLoaded ? 0 : Math.random() * 0.6));
+        box.prepend(member({ id: r.id, a: r.a, n: r.n, v: r.v }, 'idle', lobbyLoaded ? 0 : Math.random() * 0.6));
         added++;
       });
       while (box.children.length > 40) box.lastElementChild.remove();
@@ -475,9 +475,16 @@ function paintGameBoard(g, b) {
     return;
   }
   const playing = g.phase === 'question' && q.game === 'tap' && !b.done;
+  // 내용이 바뀌었을 때만 다시 그리고, 새로 들어온 사람만 떠오르게 (매초 깜빡임 방지)
+  const key = JSON.stringify([g.phase, playing, b.done, b.players, b.top.map(r => [r.rank, r.n, r.v])]);
+  if (live.dataset.key === key) return;
+  live.dataset.key = key;
+  const seen = live._seen || (live._seen = new Set());
+  const rowKey = r => `${r.n}|${r.v}`;
   live.innerHTML = `<div class="game-progress"><b>${b.done}</b>명 기록 <span>/ ${b.players}명</span></div>
-    ${playing ? `<div class="tap-hype">광클 중!!</div>` : `<div class="game-live-list">${b.top.map(r => `<div class="gl"><b>${r.rank}</b><span class="gl-av">${avatarSVG(r.a)}</span><span class="nm">${esc(r.n)}</span><span class="v">${fmt(r.v)}</span></div>`).join('')}</div>`}
+    ${playing ? `<div class="tap-hype">광클 중!!</div>` : `<div class="game-live-list">${b.top.map(r => `<div class="gl${seen.has(rowKey(r)) ? '' : ' new'}"><b>${r.rank}</b><span class="gl-av">${avatarSVG(r.a)}</span><span class="nm">${esc(r.n)}</span><span class="v">${fmt(r.v)}</span></div>`).join('')}</div>`}
     ${g.phase === 'closed' ? '<div class="banner">게임 종료! 결과를 기다려 주세요</div>' : ''}`;
+  b.top.forEach(r => seen.add(rowKey(r)));
 }
 
 // ---------- 스크린에서 바로 진행하기 (진행자 PIN 필요) ----------
@@ -531,25 +538,41 @@ document.addEventListener('keydown', e => {
 });
 if (ctrlPin) rpc('host_check', { p_pin: ctrlPin }).catch(() => { ctrlPin = null; try { localStorage.removeItem('qs.screenpin'); } catch {} updateCtrl(); });
 
-// ---------- 말풍선 채팅 · 리액션 ----------
-let feedAfter = null;
+// ---------- 채팅 · 댄스 ----------
+let feedAfter = null, chatEpoch = null, feedBusy = false;
 async function pollFeed() {
-  if (document.hidden) return;
+  if (document.hidden || feedBusy) return;
+  feedBusy = true;
   try {
-    const f = await rpc('get_feed', { p_after: feedAfter ?? 0 });
-    if (feedAfter == null) { feedAfter = f.last; return; }      // 화면을 연 순간 이전 것은 건너뜀
-    f.items.forEach(showFeed);
-    if (f.items.length) feedAfter = f.items.at(-1).k;
-  } catch {}
+    let first = feedAfter == null;
+    let f = await rpc('get_feed', { p_after: feedAfter ?? 0 });
+    // 진행자가 '채팅 지우기'나 초기화를 했으면 채팅창을 비우고 처음부터 다시
+    if (chatEpoch != null && f.epoch !== chatEpoch && !first) {
+      $('#cp-list').innerHTML = '';
+      first = true;
+      f = await rpc('get_feed', { p_after: 0 });
+    } else if (chatEpoch != null && f.epoch !== chatEpoch) $('#cp-list').innerHTML = '';
+    chatEpoch = f.epoch;
+    if (first) {
+      // 스크린을 처음 열거나 새로고침: 지금까지의 채팅을 조용히 채워 넣음 (댄스는 건너뜀)
+      f.items.forEach(it => showFeed(it, true));
+      feedAfter = f.last;
+    } else {
+      f.items.forEach(it => showFeed(it));
+      if (f.items.length) feedAfter = f.items.at(-1).k;
+    }
+  } catch {} finally { feedBusy = false; }
 }
+
 setInterval(pollFeed, 800);
 
 function findAvatars(id) {
   return [...document.querySelectorAll(`.pc[data-pid="${id}"]`)].filter(el => el.offsetParent !== null);
 }
 
-function showFeed(it) {
+function showFeed(it, quiet = false) {
   if (it.t === 1) {
+    if (quiet) return;
     // 댄스: 화면에 보이는 그 사람 아바타가 3초 동안 춤춤
     findAvatars(it.id).forEach(el => {
       const body = el.querySelector('.pc-body');
@@ -564,13 +587,14 @@ function showFeed(it) {
   // 채팅: 오른쪽 채팅창에 쌓기
   const list = $('#cp-list');
   const row = document.createElement('div');
-  row.className = 'cp-msg' + (it.v ? ' vip' : '');
+  row.className = 'cp-msg' + (it.v ? ' vip' : '') + (quiet ? ' old' : '');
   row.innerHTML = `<span class="cp-av">${avatarSVG(it.a)}</span><div class="cp-body"><b></b><span></span></div>`;
   row.querySelector('b').textContent = it.n;
   row.querySelector('.cp-body span').textContent = it.b;
   list.append(row);
-  while (list.children.length > 40) list.firstElementChild.remove();
+  while (list.children.length > 100) list.firstElementChild.remove();
   list.scrollTop = list.scrollHeight;
+  if (quiet) return;
   // 그 사람이 화면에 있으면 잠깐 반짝
   findAvatars(it.id).forEach(el => { el.classList.remove('spoke'); void el.offsetWidth; el.classList.add('spoke'); });
 }

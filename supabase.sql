@@ -21,7 +21,8 @@ create table if not exists public.game (
   updated_at  timestamptz not null default now()
 );
 insert into public.game (id) values (1) on conflict do nothing;
-alter table public.game add column if not exists chat_on boolean not null default true;   -- 말풍선 채팅 허용 여부
+alter table public.game add column if not exists chat_on boolean not null default true;   -- 채팅 허용 여부
+alter table public.game add column if not exists chat_epoch int not null default 0;       -- 진행자가 채팅을 지울 때마다 +1 (스크린 채팅창 비우기 신호)
 
 -- 진행자 PIN 과 전체 문항(정답 포함). 참가자는 절대 읽을 수 없습니다.
 create table if not exists public.host_secret (
@@ -358,17 +359,29 @@ begin
     return 'invalid';
   end if;
   insert into feed (player_id, kind, body) values (p_id, p_kind, body);
-  delete from feed where created_at < now() - interval '5 minutes';
+  -- 댄스는 1분 지나면 정리. 채팅은 진행자가 지우기 전까지 남김(최근 300개까지)
+  delete from feed where kind = 1 and created_at < now() - interval '1 minute';
+  if p_kind = 0 then
+    delete from feed where kind = 0 and id < (select min(id) from (select id from feed where kind = 0 order by id desc limit 300) t);
+  end if;
   return 'ok';
 end $$;
 
--- 스크린이 새 채팅·리액션을 가져감
+-- 스크린이 새 채팅·댄스를 가져감.
+-- p_after = 0 (스크린을 처음 열 때): 지금까지의 채팅 최근 100개를 돌려줌 (새로고침해도 채팅창 유지)
+-- p_after > 0: 그 뒤의 새 채팅 + 최근 15초 안의 댄스
 create or replace function public.get_feed(p_after bigint default 0)
 returns jsonb language sql stable security definer set search_path = public as $$
   select jsonb_build_object(
+    'epoch', (select chat_epoch from game where id = 1),
     'last',  coalesce((select max(id) from feed), 0),
     'items', coalesce((select jsonb_agg(jsonb_build_object('k', f.id, 'id', left(f.player_id::text, 8), 'n', p.nickname, 'a', p.avatar, 'v', p.vip, 't', f.kind, 'b', f.body) order by f.id)
-                       from (select * from feed where id > p_after and created_at > now() - interval '15 seconds' order by id limit 150) f
+                       from (select * from (
+                               select * from feed
+                               where case when coalesce(p_after, 0) = 0 then kind = 0
+                                          else id > p_after and (kind = 0 or created_at > now() - interval '15 seconds') end
+                               order by id desc limit 150) x
+                             order by id limit 150) f
                        join players p on p.id = f.player_id), '[]'::jsonb))
 $$;
 
@@ -393,6 +406,15 @@ returns void language plpgsql security definer set search_path = public as $$
 begin
   perform _check_pin(p_pin);
   update game set chat_on = p_on, updated_at = now() where id = 1;
+end $$;
+
+-- 진행자: 채팅 전부 지우기 (스크린 채팅창도 비워짐)
+create or replace function public.host_clear_chat(p_pin text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  perform _check_pin(p_pin);
+  delete from feed where true;
+  update game set chat_epoch = chat_epoch + 1, updated_at = now() where id = 1;
 end $$;
 
 -- ---------- 진행자용 함수 (PIN 필요) ----------------------------------
@@ -560,7 +582,7 @@ begin
   delete from results where true;
   if not p_keep_players then delete from players where true; end if;
   update game set phase = 'lobby', q_index = -1, question = null, correct = null,
-                  started_at = null, updated_at = now() where id = 1;
+                  started_at = null, chat_epoch = chat_epoch + 1, updated_at = now() where id = 1;
 end $$;
 
 -- ---------- 함수 실행 권한 --------------------------------------------
@@ -573,6 +595,7 @@ revoke execute on function
   public.send_feed(uuid, int, text),
   public.get_feed(bigint),
   public.host_set_chat(text, boolean),
+  public.host_clear_chat(text),
   public.host_people(text),
   public.host_set_vip(text, text, boolean),
   public.submit_game(uuid, numeric),
@@ -598,6 +621,7 @@ grant execute on function
   public.send_feed(uuid, int, text),
   public.get_feed(bigint),
   public.host_set_chat(text, boolean),
+  public.host_clear_chat(text),
   public.host_people(text),
   public.host_set_vip(text, text, boolean),
   public.submit_game(uuid, numeric),

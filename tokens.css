@@ -8,6 +8,10 @@
    ===================================================================== */
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css');
 
+/* 픽셀 폰트: 갈무리11 (Galmuri11, SIL OFL 1.1, © Lee Minseo) — assets/fonts 에 함께 들어 있어요 */
+@font-face { font-family: 'Galmuri11'; font-weight: 100 500; font-display: swap; src: url('assets/fonts/Galmuri11.woff2') format('woff2'); }
+@font-face { font-family: 'Galmuri11'; font-weight: 600 900; font-display: swap; src: url('assets/fonts/Galmuri11-Bold.woff2') format('woff2'); }
+
 :root {
   /* ---- Primary: Crimson ---- */
   --crimson:       #DB072F;   /* ★ 메인 */
@@ -62,6 +66,7 @@
 
   /* ---- 타이포 ---- */
   --font: 'Pretendard Variable', Pretendard, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  --font-pixel: 'Galmuri11', 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
   --fs-xs: 12px; --fs-sm: 14px; --fs-md: 16px; --fs-lg: 18px;
   --fs-xl: 22px; --fs-2xl: 28px; --fs-3xl: 36px; --fs-4xl: 48px;
   --tight: -0.03em;
