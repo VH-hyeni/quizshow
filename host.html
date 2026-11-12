@@ -51,6 +51,19 @@
           <button class="btn ghost sm" data-act="end" type="button">최종 결과</button>
           <button class="btn ghost sm" id="chat-toggle" type="button">채팅 끄기</button>
           <button class="btn ghost sm" id="chat-clear" type="button">채팅 지우기</button>
+          <label class="map-pick">채팅 표시
+            <select id="chat-mode">
+              <option value="panel">오른쪽 채팅창</option>
+              <option value="bubble">캐릭터 말풍선</option>
+            </select>
+          </label>
+          <label class="map-pick">스크린 맵
+            <select id="map-pick">
+              <option value="auto">자동 (문제는 인형의 집, 나머지는 무대)</option>
+              <option value="doll">인형의 집</option>
+              <option value="stage">퀴즈 무대</option>
+            </select>
+          </label>
         </div>
         <div class="msg" id="msg"></div>
 

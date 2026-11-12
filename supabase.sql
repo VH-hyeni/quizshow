@@ -23,6 +23,8 @@ create table if not exists public.game (
 insert into public.game (id) values (1) on conflict do nothing;
 alter table public.game add column if not exists chat_on boolean not null default true;   -- 채팅 허용 여부
 alter table public.game add column if not exists chat_epoch int not null default 0;       -- 진행자가 채팅을 지울 때마다 +1 (스크린 채팅창 비우기 신호)
+alter table public.game add column if not exists map text not null default 'auto';
+alter table public.game add column if not exists chat_mode text not null default 'panel';  -- 채팅 표시: panel(오른쪽 채팅창) | bubble(캐릭터 머리 위 말풍선)         -- 스크린 맵: auto(자동) | doll(인형의 집) | stage(퀴즈 무대)
 
 -- 진행자 PIN 과 전체 문항(정답 포함). 참가자는 절대 읽을 수 없습니다.
 create table if not exists public.host_secret (
@@ -154,7 +156,7 @@ returns jsonb language sql immutable as $$
                                             and (p ->> k)::numeric = floor((p ->> k)::numeric)
                                             and (p ->> k)::numeric between 0 and mx
                                        then (p ->> k)::numeric::int else 0 end), '{}'::jsonb)
-  from (values ('h', 7), ('hc', 7), ('s', 3), ('e', 4), ('f', 3), ('o', 6), ('oc', 7), ('a', 6)) as t(k, mx)
+  from (values ('z', 12), ('h', 4), ('f', 2), ('b', 4)) as t(k, mx)   -- z 띠(12 = 밤티) · h 머리 소품 · f 얼굴 소품 · b 탈것·등
 $$;
 
 drop function if exists public.join_game(uuid, text);
@@ -408,6 +410,24 @@ begin
   update game set chat_on = p_on, updated_at = now() where id = 1;
 end $$;
 
+-- 진행자: 스크린 맵 바꾸기
+create or replace function public.host_set_map(p_pin text, p_map text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  perform _check_pin(p_pin);
+  if p_map not in ('auto', 'doll', 'stage') then raise exception '알 수 없는 맵: %', p_map; end if;
+  update game set map = p_map, updated_at = now() where id = 1;
+end $$;
+
+-- 진행자: 채팅 표시 방식 바꾸기
+create or replace function public.host_set_chat_mode(p_pin text, p_mode text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  perform _check_pin(p_pin);
+  if p_mode not in ('panel', 'bubble') then raise exception '알 수 없는 채팅 표시 방식: %', p_mode; end if;
+  update game set chat_mode = p_mode, updated_at = now() where id = 1;
+end $$;
+
 -- 진행자: 채팅 전부 지우기 (스크린 채팅창도 비워짐)
 create or replace function public.host_clear_chat(p_pin text)
 returns void language plpgsql security definer set search_path = public as $$
@@ -596,6 +616,8 @@ revoke execute on function
   public.get_feed(bigint),
   public.host_set_chat(text, boolean),
   public.host_clear_chat(text),
+  public.host_set_map(text, text),
+  public.host_set_chat_mode(text, text),
   public.host_people(text),
   public.host_set_vip(text, text, boolean),
   public.submit_game(uuid, numeric),
@@ -622,6 +644,8 @@ grant execute on function
   public.get_feed(bigint),
   public.host_set_chat(text, boolean),
   public.host_clear_chat(text),
+  public.host_set_map(text, text),
+  public.host_set_chat_mode(text, text),
   public.host_people(text),
   public.host_set_vip(text, text, boolean),
   public.submit_game(uuid, numeric),
