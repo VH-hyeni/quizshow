@@ -25,6 +25,11 @@ body.player, body.screen { font-family: var(--font-pixel); }
 
 /* ---------- 아바타 & 모션 ---------- */
 .ch, .av { display: block; width: 100%; height: auto; overflow: visible; }
+/* 픽셀 캐릭터: 바깥 상자는 예전 크기 그대로, 안쪽 도트 그림은 여백만큼 살짝 넘치게 */
+.av.px, .ch.px { position: relative; aspect-ratio: 1; }
+.ch.mascot.px { aspect-ratio: 1; }
+.ch.mascot.px { aspect-ratio: 1; }
+.px-img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; max-width: none; object-fit: contain; object-position: 50% 100%; pointer-events: none; user-select: none; }
 .ch-idle .ch-eyes { transform-box: fill-box; transform-origin: center; animation: blink 4.6s infinite; }
 @keyframes blink { 0%, 93%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
 /* 스티커처럼 하얀 테두리 (큰 아바타에만) */
@@ -309,7 +314,7 @@ body.player, body.screen { font-family: var(--font-pixel); }
 .screen .answers-count { font-size: 2.4vh; color: var(--text-sub); }
 .screen .answers-count b { color: var(--text); font-weight: 800; font-size: 3.6vh; margin-right: .4vh; }
 
-.screen .sopts { flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; gap: 1.8vh; min-height: 0; }
+.screen .sopts { flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: minmax(0, 1fr); gap: 1.8vh; min-height: 0; }
 .screen .sopt {
   background: var(--card); border: .4vh solid transparent; border-radius: var(--r-lg);
   padding: 2vh; display: flex; flex-direction: column; justify-content: center; gap: 1.4vh; min-height: 0;
@@ -375,7 +380,7 @@ body.player, body.screen { font-family: var(--font-pixel); }
 /* 바글바글 군중 */
 .screen .pc {
   width: var(--s, 48px); display: flex; flex-direction: column-reverse; align-items: center;
-  margin-right: calc(var(--s, 48px) * -0.1); translate: 0 var(--dy, 0);
+  margin: 0 calc(var(--s, 48px) * -0.04); translate: 0 var(--dy, 0);
   animation: enter .7s var(--bounce) var(--enter-delay, 0s) both;
 }
 .screen .pc-body { width: 100%; transform-origin: 50% 100%; animation: jiggle var(--dur, 1.2s) ease-in-out var(--phase, 0s) infinite; }
@@ -383,7 +388,7 @@ body.player, body.screen { font-family: var(--font-pixel); }
 .screen .pc-body.mood-sad { animation-name: sway; }
 .screen .pc-body.mood-sleep { animation: none; }
 .screen .pc-name {
-  margin-bottom: -1px; max-width: calc(var(--s, 48px) * 1.6); position: relative; z-index: 1;
+  margin-bottom: calc(var(--s, 48px) * -0.12); max-width: calc(var(--s, 48px) * 1.6); position: relative; z-index: 1;
   color: #fff; font-weight: 800; font-size: max(10px, calc(var(--s, 48px) * .24)); line-height: 1.25;
   text-shadow: -1px -1px 0 #111, 1px -1px 0 #111, -1px 1px 0 #111, 1px 1px 0 #111, 0 1.5px 0 #111;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -652,3 +657,151 @@ body.player, body.screen { font-family: var(--font-pixel); }
 .screen .sopts.show-bars .sopt { justify-content: flex-start; }
 .screen .sopts.show-bars .fill { display: block; position: absolute; inset: auto auto 0 0; height: 1.4vh; border-radius: 0 0 0 var(--r-lg); background: var(--c); transition: width var(--dur-slow) var(--ease); }
 .screen .sopts.show-bars .pct { display: grid; flex: 1; place-items: center; font-size: 9vh; font-weight: 800; letter-spacing: var(--tight); color: var(--c); }
+
+
+/* 진행자: 스크린 맵 고르기 */
+.host .map-pick { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-sub); font-weight: 600; }
+.host .map-pick select { background: var(--field); color: var(--text); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px 8px; font: inherit; }
+
+/* =====================================================================
+   스크린: 픽셀아트 맵 · 인형의 집 방
+   - 배경은 진행자가 고른 맵 (body[data-map])
+   - 글씨가 올라가는 곳은 모두 크림색 도트 상자(진한 테두리, 네모난 모서리 홈)
+   - 보기 A·B·C·D는 인형의 집 방 하나씩. 고른 사람은 그 방 바닥에 모여 서요
+   ===================================================================== */
+.screen {
+  --px: #000000;                       /* 도트 테두리 색 */
+  --pxw: .5vh;                         /* 도트 테두리 두께 */
+  --px-shadow: .8vh 1vh 0 0 rgba(0, 0, 0, .45);
+}
+
+.screen .sopt, .screen .ticket canvas, .screen .ticket img { image-rendering: auto; }
+
+/* 도트 상자 */
+.screen .top, .screen .qhead, .screen .chatpanel, .screen .ticket, .screen .lobby-info,
+.screen .board, .screen .game-stage, .screen .spectators, .screen .zoom-panel,
+.screen .sopt .head, .screen #ans:not(:empty), .screen .banner:not(:empty), .screen .stage > .empty {
+  background: var(--card); color: var(--text); border: 0; border-radius: 0;
+  box-shadow: 0 calc(var(--pxw) * -1) 0 0 var(--px), 0 var(--pxw) 0 0 var(--px),
+              calc(var(--pxw) * -1) 0 0 0 var(--px), var(--pxw) 0 0 0 var(--px),
+              inset 0 calc(var(--pxw) * -1) 0 0 var(--card-2), var(--px-shadow);
+}
+.screen { gap: 3vh; }
+.screen .top { padding: 1vh 2vh; }
+.screen .top .people { color: var(--text); }
+.screen .sound-btn { border-radius: 0; background: var(--card-2); }
+.screen .sound-btn.on { background: var(--field); }
+.screen .qhead { padding: 2vh 3vh; }
+.screen .chatpanel { border-radius: 0; overflow: visible; }
+.screen .cp-list { overflow-x: hidden; }
+.screen .ticket { border-radius: 0; background: #fff; }
+.screen .lobby-info { padding: 3vh 3.4vh 1vh; min-width: 0; }
+.screen .lobby .count b { color: var(--crimson-text); }
+.screen .board { padding: 3vh 3.4vh; max-width: 1060px; }
+.screen .board .r { background: var(--card-2); border-radius: 0; }
+.screen .board .r.top1 { background: var(--accent); }
+.screen .game-stage { padding: 2.4vh 3vh; }
+.screen .gl, .screen .gr { background: var(--card-2); border-radius: 0; }
+.screen .gl b, .screen .gr b { color: var(--crimson-text); }
+.screen .pod-block { border-radius: 0; }
+.screen .game-countdown { border-radius: 0; background: var(--card); }
+.screen .spectators { padding: .6vh 2vh 0; border-top: 0; }
+.screen .spectators.none { opacity: 1; }
+.screen .spectators.none .spec-crowd { opacity: .4; }
+.screen #ans:not(:empty) { align-self: flex-start; padding: .6vh 2vh; margin-left: var(--pxw); }
+.screen .banner { min-height: 0; color: var(--crimson-text); }
+.screen .banner:not(:empty) { align-self: center; padding: .6vh 3vh; }
+.screen .stage > .empty { flex: none; align-self: center; margin: auto; padding: 3vh 5vh; }
+.screen .zoom-panel { border-radius: 0; }
+.screen .zoom-crowd { border-radius: 0; }
+.screen .clock { box-shadow: 0 0 0 var(--pxw) var(--px), var(--px-shadow); }
+.screen .kind-pill { border-radius: 0; box-shadow: 0 0 0 .3vh var(--px); margin-right: 1.4vh; }
+
+/* 보기 = 인형의 집 방 */
+.screen .sopts { gap: 2.6vh 2.2vh; padding: var(--pxw); }
+.screen .sopt {
+  --room: color-mix(in srgb, var(--c) 14%, var(--card)); --floor: color-mix(in srgb, var(--c) 30%, var(--card));
+  background: linear-gradient(var(--room) 0 72%, var(--floor) 72% 100%); border: 0; border-radius: 0;
+  padding: 2.6% 3.2% 2.4%; justify-content: flex-start; gap: 0;
+  box-shadow: var(--px-shadow); overflow: visible;
+}
+.screen .sopt { box-shadow: 0 -.6vh 0 0 var(--px), 0 .6vh 0 0 var(--px), -.6vh 0 0 0 var(--px), .6vh 0 0 0 var(--px), var(--px-shadow); }
+.screen .sopt.correct { box-shadow: 0 0 0 .6vh var(--px), 0 0 0 1.3vh var(--accent), 0 0 0 1.9vh var(--px), var(--px-shadow); }
+.screen .sopt .head { position: relative; z-index: 3; margin: var(--pxw); padding: .8vh 1.4vh; gap: 1.4vh; }
+.screen .sopt .badge { border-radius: 0; box-shadow: 0 0 0 .3vh var(--px); }
+.screen .sopts:not(.show-crowd) .sopt .head { font-size: 3.4vh; }
+.screen .zoom-btn { background: var(--card-2); border-radius: 0; }
+.screen .sopts.show-crowd .crowd {
+  background: none; border-radius: 0; align-content: flex-end; padding: .6vh 1vh 3%;
+}
+.screen .sopts.show-crowd .crowd:empty::after {
+  margin: auto auto 6%; color: var(--px); font-size: 1.9vh; font-weight: 700;
+  background: rgba(255, 248, 238, .86); padding: .4vh 1.4vh; box-shadow: 0 0 0 .3vh var(--px);
+}
+.screen .sopt.correct { transform: scale(1.02); }
+.screen .sopt.dim { opacity: .55; filter: grayscale(.5); transform: none; }
+.screen .sopts.show-bars .pct {
+  color: var(--c); -webkit-text-stroke: .5vh var(--px); paint-order: stroke fill;
+  text-shadow: .5vh .6vh 0 var(--px);
+}
+.screen .sopts.show-bars .fill { border-radius: 0; height: 2vh; bottom: 2.4%; left: 3.2%; max-width: 93.6%; box-shadow: 0 0 0 .3vh var(--px); }
+
+
+/* =====================================================================
+   스크린: 픽셀 말풍선 (채팅 표시 = 캐릭터 말풍선)
+   ===================================================================== */
+.screen .pc { position: relative; }
+.screen .pc.talking { z-index: 30; }
+.screen .bubble {
+  position: absolute; left: 50%; bottom: calc(100% + 1.2vh); translate: -50% 0; z-index: 30;
+  width: max-content; max-width: max(150px, calc(var(--s, 48px) * 3.4));
+  background: #fff; color: var(--text); padding: .5vh 1vh;
+  font-size: max(13px, calc(var(--s, 48px) * .3)); font-weight: 700; line-height: 1.3; text-align: center;
+  white-space: normal; word-break: keep-all; overflow-wrap: anywhere;
+  box-shadow: 0 -.4vh 0 0 var(--px), 0 .4vh 0 0 var(--px), -.4vh 0 0 0 var(--px), .4vh 0 0 0 var(--px), .5vh .9vh 0 0 rgba(35, 12, 35, .3);
+  animation: bubble-in .35s steps(3) both;
+}
+/* 꼬리: 네모 두 칸 */
+.screen .bubble::before, .screen .bubble::after { content: ''; position: absolute; left: 50%; width: 1.2vh; height: .8vh; background: #fff; translate: -50% 0; }
+.screen .bubble::before { top: 100%; box-shadow: -.4vh 0 0 0 var(--px), .4vh 0 0 0 var(--px); }
+.screen .bubble::after { top: calc(100% + .8vh); width: .4vh; height: .4vh; background: var(--px); }
+.screen .pc.vip .bubble { background: #FFF3C4; }
+.screen .pc.vip .bubble::before { background: #FFF3C4; }
+@keyframes bubble-in { from { opacity: 0; transform: translateY(1vh) scale(.6); } to { opacity: 1; transform: none; } }
+.screen .guests { padding-top: 7vh; max-height: 52vh; }
+
+/* 캐릭터가 화면에 없을 때 왼쪽 아래 말풍선 */
+.bubble-tray { position: fixed; left: 2vw; bottom: 2.4vh; z-index: 35; display: flex; flex-direction: column; gap: 1.4vh; pointer-events: none; }
+.screen .tray-msg { display: flex; align-items: flex-end; gap: 1.2vh; animation: bubble-in .35s steps(3) both; }
+.screen .tray-msg .cp-av { width: 5vh; }
+.screen .bubble.flat { position: relative; left: auto; bottom: auto; translate: none; text-align: left; max-width: 34vw; margin-bottom: 1vh; }
+.screen .bubble.flat::before, .screen .bubble.flat::after { display: none; }
+.screen .bubble.flat b { display: block; font-size: .8em; color: var(--text-sub); }
+.screen .tray-msg.vip .bubble.flat b { color: var(--crimson-text); }
+
+
+/* =====================================================================
+   고퀄 캐릭터: 고르기 화면 · 표정 대신 모션/효과
+   ===================================================================== */
+.player .pick-title { font-size: var(--fs-sm); font-weight: 700; color: var(--text-sub); margin-top: var(--sp-2); }
+.player .picks.parts .pick .av { width: 80%; }
+.player .year-row { display: flex; gap: var(--sp-2); }
+.player .year-row input { flex: 1; min-width: 0; background: var(--field); border: 1px solid transparent; border-radius: var(--r-md); padding: 10px 12px; outline: none; }
+.player .pick-note { text-align: center; padding: var(--sp-5) 0; }
+.px-acc { position: absolute; height: auto; max-width: none; pointer-events: none; user-select: none; }
+.px-rider { position: absolute; inset: 0; display: block; }
+.av.riding .px-rider { transform: translateY(-30%) scale(.72); transform-origin: 50% 100%; }
+.av.ride-lambo .px-rider, .av.ride-porsche .px-rider { transform: translateY(-46%) scale(.68); }
+.px-acc.acc-car { z-index: 1; }
+.av.px { isolation: isolate; }
+.player .maker .preview .stage-av { width: 150px; }
+/* 오답: 살짝 풀 죽은 색 · 미응답: 흐릿하게 졸기 · 두근: 통통 */
+.ch-sad .px-img { filter: saturate(.55) brightness(.92); }
+.ch-sleep .px-img { filter: grayscale(.5); opacity: .7; }
+.ch-sleep::after { content: 'z'; position: absolute; right: -4%; top: 2%; font-weight: 800; font-size: max(10px, 28%); color: var(--text-sub, #888); animation: zz 1.6s ease-in-out infinite; }
+.ch-sad::after { content: ''; position: absolute; left: 30%; top: 40%; width: 7%; height: 9%; background: #8FD0FF; border-radius: 50% 50% 50% 50% / 30% 30% 70% 70%; opacity: .9; }
+@keyframes zz { 0%, 100% { transform: translateY(0); opacity: .4; } 50% { transform: translateY(-30%); opacity: 1; } }
+
+/* 어두운 화면에서도 흰 말풍선·QR 카드 글씨는 진하게 */
+.screen .bubble, .screen .ticket, .screen .ticket .url { color: #1F0A0E; }
+.screen .bubble.flat b { color: #6B5A62; }

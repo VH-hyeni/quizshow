@@ -179,6 +179,12 @@ $('#chat-clear').addEventListener('click', () => {
     act(() => rpc('host_clear_chat', { p_pin: pin }));
 });
 
+// 채팅 표시 방식: 오른쪽 채팅창 / 캐릭터 머리 위 픽셀 말풍선
+$('#chat-mode').addEventListener('change', e => act(() => rpc('host_set_chat_mode', { p_pin: pin, p_mode: e.target.value })));
+
+// 스크린 맵 바꾸기
+$('#map-pick').addEventListener('change', e => act(() => rpc('host_set_map', { p_pin: pin, p_map: e.target.value })));
+
 // 채팅 켜기/끄기 (댄스는 항상 허용)
 $('#chat-toggle').addEventListener('click', () => {
   if (!game) return;
@@ -210,6 +216,8 @@ function onGame() {
   $('#phase').textContent = PHASE_NAME[g.phase] || g.phase;
   $('#phase').classList.toggle('live', g.phase === 'question');
   $('#chat-toggle').textContent = g.chat_on === false ? '채팅 켜기 (지금 꺼짐)' : '채팅 끄기';
+  if (document.activeElement !== $('#map-pick')) $('#map-pick').value = g.map || 'auto';
+  if (document.activeElement !== $('#chat-mode')) $('#chat-mode').value = g.chat_mode || 'panel';
   $('#qpos').textContent = g.q_index >= 0 ? `${g.q_index + 1}번째 문제 (총 ${g.q_total}개)` : `문제 ${g.q_total}개 준비됨`;
   $('#curq').textContent = g.q_index >= 0 && g.question
     ? `[${KIND_LABEL[kindOf(g.question)]}] ${g.question.kind === 'game' ? (GAMES[g.question.game]?.name || g.question.text) : g.question.text}` : '';

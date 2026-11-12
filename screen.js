@@ -66,11 +66,20 @@ function render(g) {
   else if (entering) startPhaseMusic(g);
 
   if (!['question', 'closed', 'reveal'].includes(g.phase)) stage.classList.remove('crowd-mode');
+  setMap(g);
+  bubbleMode = g.chat_mode === 'bubble';
+  $('#chatpanel').classList.toggle('off', g.chat_on === false || bubbleMode);
   if (g.phase === 'lobby') return renderLobby();
   updateCtrl();
-  $('#chatpanel').classList.toggle('off', g.chat_on === false);
   if (['question', 'closed', 'reveal'].includes(g.phase)) return g.question?.kind === 'game' ? renderGameScreen(g) : renderQuestion(g);
   if (g.phase === 'leaderboard' || g.phase === 'end') return renderBoard(g.phase === 'end');
+}
+
+// 맵: 진행자가 고른 배경. '자동'이면 문제(보기 방이 있는 화면)는 인형의 집, 나머지는 퀴즈 무대
+function setMap(g) {
+  const roomy = ['question', 'closed', 'reveal'].includes(g.phase) && g.question?.kind !== 'game';
+  const m = g.map === 'doll' || g.map === 'stage' ? g.map : roomy ? 'doll' : 'stage';
+  if (document.body.dataset.map !== m) document.body.dataset.map = m;
 }
 
 function playTransition(g) {
@@ -122,12 +131,23 @@ function syncCrowd(box, people, mood, kind = 'card') {
     if (el) setMood(el, mood);
     else { const d = member(p, mood, Math.min(1.2, k++ * 0.03)); m.set(p.id, d); box.append(d); }
   }
-  const w = box.clientWidth - 16, h = box.clientHeight - 8;
-  const n = Math.max(1, people.length + people.filter(p => p.v).length * 3);   // 크게 보일 사람(2배 = 면적 4배)은 자리를 더 차지
-  const size = kind === 'spect'
-    ? Math.max(18, Math.min(h * (people.some(p => p.v) ? 0.3 : 0.58), Math.floor(Math.sqrt((w * h) / (n * 1.7)) * 0.95)))
-    : Math.max(22, Math.min(h * (people.some(p => p.v) ? 0.27 : 0.4), Math.floor(Math.sqrt((w * h) / (n * 1.75)) * 0.92)));
-  box.style.setProperty('--s', `${size}px`);
+  const cs = getComputedStyle(box);
+  const w = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 6;
+  const h = box.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 6;
+  const v = people.filter(p => p.v).length;
+  box.style.setProperty('--s', `${fitSize(w, h, people.length, v, kind === 'spect' ? h * 0.62 : h * 0.5, kind === 'spect' ? 16 : 18)}px`);
+}
+
+// 상자 안에 모두 들어가는 가장 큰 캐릭터 크기 찾기
+// 한 명 = 너비 0.92칸, 높이 (몸 1 − 이름 겹침 + 이름)칸. 크게 보일 사람은 너비 2배라 2명분 자리 + 그 줄이 더 높아짐
+function fitSize(w, h, n, v, cap, min) {
+  for (let s = Math.floor(cap); s > min; s--) {
+    const perRow = Math.max(1, Math.floor(w / (s * 0.92)));
+    const rows = Math.ceil((n + v) / perRow);
+    const need = rows * (s * 0.92 + Math.max(14, s * 0.3) + 2) + (v ? s * 1.0 : 0);   // 이름표는 최소 14px
+    if (need <= h) return s;
+  }
+  return min;
 }
 
 // ---------- 대기실 ----------
@@ -145,7 +165,7 @@ async function renderLobby() {
           <div id="qr"></div>
           <div class="url">${esc(url.replace(/^https?:\/\//, ''))}</div>
         </div>
-        <div>
+        <div class="lobby-info">
           <h1>QR 찍고<br>내 캐릭터로 입장!</h1>
           <div class="count"><b id="count">0</b>명 입장</div>
           <div class="guests" id="guests"></div>
@@ -595,8 +615,38 @@ function showFeed(it, quiet = false) {
   while (list.children.length > 100) list.firstElementChild.remove();
   list.scrollTop = list.scrollHeight;
   if (quiet) return;
+  if (bubbleMode) return showBubble(it);
   // 그 사람이 화면에 있으면 잠깐 반짝
   findAvatars(it.id).forEach(el => { el.classList.remove('spoke'); void el.offsetWidth; el.classList.add('spoke'); });
+}
+
+// ---------- 픽셀 말풍선 (채팅 표시 = 캐릭터 말풍선일 때) ----------
+let bubbleMode = false;
+function showBubble(it) {
+  const els = findAvatars(it.id);
+  if (els.length) {
+    els.forEach(el => {
+      el.querySelector('.bubble')?.remove();
+      const b = document.createElement('div');
+      b.className = 'bubble';
+      b.textContent = it.b;
+      el.append(b);
+      el.classList.add('talking');
+      clearTimeout(el._bt);
+      el._bt = setTimeout(() => { b.remove(); el.classList.remove('talking'); }, 5500);
+    });
+    return;
+  }
+  // 화면에 그 사람 캐릭터가 없으면(미니게임·순위 화면 등) 왼쪽 아래에 작은 말풍선으로
+  const tray = $('#bubble-tray');
+  const row = document.createElement('div');
+  row.className = 'tray-msg' + (it.v ? ' vip' : '');
+  row.innerHTML = `<span class="cp-av">${avatarSVG(it.a)}</span><div class="bubble flat"><b></b><span></span></div>`;
+  row.querySelector('b').textContent = it.n;
+  row.querySelector('.bubble span').textContent = it.b;
+  tray.append(row);
+  while (tray.children.length > 4) tray.firstElementChild.remove();
+  setTimeout(() => row.remove(), 6000);
 }
 
 syncClock();

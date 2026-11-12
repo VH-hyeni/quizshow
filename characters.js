@@ -6,24 +6,23 @@
 // =====================================================================
 
 export const PARTS = {
-  h:  { label: '머리',   names: ['단발', '긴머리', '양갈래', '똥머리', '숏컷', '뽀글', '폭탄머리', '웨이브장발'] },
-  hc: { label: '머리색', names: ['흑갈', '초코', '허니', '핑크', '라벤더', '민트', '하늘', '체리'] },
-  s:  { label: '피부',   names: ['우유', '복숭아', '꿀', '코코아'] },
-  e:  { label: '눈',     names: ['반짝', '초롱', '방긋', '새침', '퀭'] },
-  f:  { label: '수염',   names: ['없음', '콧수염', '턱수염', '염소수염'] },
-  o:  { label: '옷',     names: ['티셔츠', '원피스', '후드', '셔츠', '세일러', '멜빵', '토가'] },
-  oc: { label: '옷색',   names: ['크림슨', '블루', '버터', '민트', '라일락', '핑크', '탠저린', '스카이'] },
-  a:  { label: '소품',   names: ['없음', '리본', '별핀', '안경', '고양이귀', '꽃관', '천사날개'] },
+  h:  { label: '머리',   names: ['긴생머리', '단발', '양갈래', '똥머리', '숏컷', '곱슬', '폭탄머리', '웨이브장발'] },
+  hc: { label: '머리색', names: ['초코', '흑발', '금발', '핑크', '라벤더', '민트', '하늘', '체리'] },
+  s:  { label: '피부',   names: ['우유', '꿀', '코코아'] },
+  e:  { label: '눈',     names: ['반짝', '푸른별', '초롱', '방긋', '새침', '퀭', '초록별', '별눈'] },
+  f:  { label: '수염',   names: ['없음', '콧수염', '덥수룩', '염소', '까칠'] },
+  o:  { label: '옷',     names: ['세일러', '후드', '블라우스', '셔츠', '프릴원피스', '티셔츠', '멜빵', '토가'] },
+  a:  { label: '소품',   names: ['없음', '리본', '고양이귀', '천사날개', '안경', '꽃관', '베레모', '헤드폰', '별핀'] },
 };
-export const PART_KEYS = ['h', 'hc', 's', 'e', 'f', 'o', 'oc', 'a'];
+export const PART_KEYS = ['h', 'hc', 's', 'e', 'f', 'o', 'a'];
 
 // 요즘 유행 프리셋 ㅋ — 갈색 웨이브 장발 + 턱수염 + 퀭한 눈 + 토가 + 천사날개
 export const PRESETS = {
-  밤티: { h: 7, hc: 1, s: 1, e: 4, f: 2, o: 6, oc: 2, a: 6 },
+  밤티: { z: 12, h: 0, f: 0, b: 0 },
 };
 
-export const HAIR = ['#3B2A2E', '#7B4A2E', '#F1BE5A', '#FF8FB1', '#A98BFF', '#4FD1A8', '#5CB8FF', '#D8203F'];
-export const SKIN = ['#FFE7DA', '#FCD5BC', '#E6AF87', '#A8714D'];
+export const HAIR = ['#8A5634', '#3A3040', '#E9B949', '#F28DB2', '#A98BE6', '#5CC9A0', '#6CB4F0', '#D23A4C'];
+export const SKIN = ['#FAD6BE', '#E2A878', '#A86E4A'];
 export const CLOTH = ['#DB072F', '#4B7BFF', '#FFC93C', '#2ED39A', '#A98BFF', '#FF8FB1', '#FF8A3D', '#5CC8FF'];
 const INK = '#2B1B24';
 const LIP = '#C2414F';
@@ -34,18 +33,6 @@ function shade(hex, amt) {             // amt < 0 어둡게, > 0 밝게
   return '#' + [n >> 16, (n >> 8) & 255, n & 255].map(f).map(v => v.toString(16).padStart(2, '0')).join('');
 }
 
-export function normAvatar(a = {}) {
-  const max = { h: 7, hc: 7, s: 3, e: 4, f: 3, o: 6, oc: 7, a: 6 };
-  const out = {};
-  for (const k of PART_KEYS) out[k] = Number.isInteger(a?.[k]) && a[k] >= 0 && a[k] <= max[k] ? a[k] : 0;
-  return out;
-}
-
-export function randomAvatar() {
-  const r = n => Math.floor(Math.random() * n);
-  const f = Math.random() < 0.75 ? 0 : 1 + r(3);   // 수염은 가끔만
-  return { h: r(8), hc: r(8), s: r(4), e: r(5), f, o: r(7), oc: r(8), a: r(7) };
-}
 
 // ---------- 머리 ----------
 function hairBack(h, c, d) {
@@ -234,7 +221,7 @@ function accessory(a, hairColor) {
   return '';
 }
 
-export function avatarSVG(raw, mood = 'idle', cls = '') {
+function avatarVector(raw, mood = 'idle', cls = '', opt = {}) {
   const a = normAvatar(raw);
   const hc = HAIR[a.hc], hd = shade(hc, -0.32);
   const skin = SKIN[a.s], skinD = shade(skin, -0.22);
@@ -245,7 +232,7 @@ export function avatarSVG(raw, mood = 'idle', cls = '') {
     ${outfit(a.o, CLOTH[a.oc], skin)}
     <path d="M45 64h10v9q-5 3-10 0z" fill="${skinD}"/>
     <ellipse cx="50" cy="47" rx="27" ry="25" fill="${skin}" stroke="${skinD}" stroke-width="1.4"/>
-    ${face(mood, a.e, iris, { skin, skinD, brow: hd })}
+    ${opt.noFace ? '' : face(mood, a.e, iris, { skin, skinD, brow: hd })}
     ${facialHair(a.f, a.h === 6 || a.h === 5 ? hd : hc, hd)}
     ${a.a === 4 ? accessory(4, hc) : ''}
     ${hairFront(a.h, hc, hd)}
@@ -254,7 +241,7 @@ export function avatarSVG(raw, mood = 'idle', cls = '') {
 }
 
 // ---------- 브랜드 마스코트 (크림슨 말랑이) ----------
-export function mascotSVG(mood = 'idle', cls = '') {
+function mascotVector(mood = 'idle', cls = '') {
   const eyesM = mood === 'happy'
     ? `<g fill="none" stroke="${INK}" stroke-width="4.2" stroke-linecap="round"><path d="M31 52q7-9 14 0"/><path d="M55 52q7-9 14 0"/></g>`
     : mood === 'sleep'
@@ -265,3 +252,395 @@ export function mascotSVG(mood = 'idle', cls = '') {
     <circle cx="50" cy="51" r="40" fill="#DB072F"/>${eyesM}
     <ellipse cx="27" cy="63" rx="6" ry="3.5" fill="#fff" opacity=".35"/><ellipse cx="73" cy="63" rx="6" ry="3.5" fill="#fff" opacity=".35"/></svg>`;
 }
+
+
+// =====================================================================
+//  픽셀 캐릭터 (손으로 찍은 도트 인형)
+//  40×62칸 도트 위에 부위별로 한 칸씩 찍어서 만들어요.
+//   - 부위마다 4단 색(외곽선 · 그림자 · 기본 · 하이라이트)으로 칠하고
+//   - 부위 테두리는 그 부위의 진한 색으로 외곽선을 둘러요 (머리카락은 진한 머리색, 피부는 진한 살색)
+//   - 눈·입·소품은 도트 그림을 그대로 찍어요
+//  화면에서는 image-rendering: pixelated 로 키워서 네모 도트가 또렷하게 보여요.
+//  같은 모습은 처음 한 번만 그리고 저장해 둔 그림을 다시 써요.
+// =====================================================================
+const SW = 56, SH = 71;                                // 캐릭터 도트 크기 (머리 : 몸 ≈ 1 : 1)
+const OUT_SCALE = 5;                                   // 그림 파일은 5배로 키워 저장 → 작게 보여도 도트가 깨지지 않음
+const pxCache = new Map();
+const canDraw = typeof document !== 'undefined';
+const hexRgb = h => { const n = parseInt(h.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
+const mix = (a, b, t) => '#' + hexRgb(a).map((v, i) => Math.round(v + (hexRgb(b)[i] - v) * t).toString(16).padStart(2, '0')).join('');
+const ramp = (c, o = -0.55) => ({ o: shade(c, o), s: shade(c, -0.18), b: c, h: shade(c, 0.32) });
+const flat = c => ({ o: c, s: c, b: c, h: c });
+
+// 모양 도우미 (칸 좌표 x, y → 안에 있으면 true)
+const ell = (cx, cy, rx, ry) => (x, y) => ((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2 <= 1;
+const rect = (x0, y0, x1, y1) => (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+const or = (...f) => (x, y) => f.some(t => t(x, y));
+const and = (...f) => (x, y) => f.every(t => t(x, y));
+const not = f => (x, y) => !f(x, y);
+const bumpy = (cx, cy, rx, ry, k, amp) => (x, y) => { const a = Math.atan2(y + 0.5 - cy, x + 0.5 - cx); return ((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2 <= 1 + amp * Math.abs(Math.sin(a * k)); };
+// 옆머리 가닥: 아래 끝이 뾰족
+const lock = (x0, x1, y0, y1, cx) => (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1 - Math.abs(x - cx);
+const cut = (...pts) => not(or(...pts.map(([x, y]) => rect(x, y, x, y))));
+
+class Sprite {
+  constructor(w = SW, h = SH) { this.w = w; this.h = h; this.px = new Array(w * h).fill(null); }
+  set(x, y, c) { if (c && x >= 0 && y >= 0 && x < this.w && y < this.h) this.px[y * this.w + x] = c; }
+  get(x, y) { return x >= 0 && y >= 0 && x < this.w && y < this.h ? this.px[y * this.w + x] : null; }
+  // 모양 하나를 칠함: 테두리 = 외곽선, 오른쪽·아래 안쪽 = 그림자, 왼쪽·위 안쪽 = 하이라이트(선택)
+  fill(test, r, o = {}) {
+    const W = this.w, H = this.h, m = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (test(x, y)) m[y * W + x] = 1;
+    // 한 칸짜리 튀어나온 점·구멍 정리 (외곽선이 깨져 보이는 것 방지)
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x, n = (xx, yy) => xx >= 0 && yy >= 0 && xx < W && yy < H && m[yy * W + xx] === 1;
+      const cnt = n(x - 1, y) + n(x + 1, y) + n(x, y - 1) + n(x, y + 1);
+      if (m[i] && cnt <= 1) m[i] = 0; else if (!m[i] && cnt >= 3) m[i] = 1;
+    }
+    const M = (x, y) => x >= 0 && y >= 0 && x < W && y < H && m[y * W + x] === 1;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (!M(x, y)) continue;
+      const edge = !M(x - 1, y) || !M(x + 1, y) || !M(x, y - 1) || !M(x, y + 1);
+      const openTop = o.noTopLine && !M(x, y - 1) && M(x - 1, y) && M(x + 1, y);
+      let c;
+      if (edge && !openTop && !o.noLine) c = r.o;
+      else if (!M(x + 2, y) || !M(x, y + 2)) c = r.s;
+      else if (o.hl && (!M(x - 2, y) || !M(x, y - 2))) c = r.h;
+      else c = r.b;
+      if (o.paint) c = o.paint(x, y, c, r) || c;
+      this.set(x, y, c);
+    }
+    return this;
+  }
+  stamp(rows, x0, y0, pal, flip = false) {
+    rows.forEach((row, y) => [...row].forEach((ch, x) => {
+      if (ch === '.' || !pal[ch]) return;
+      this.set(x0 + (flip ? row.length - 1 - x : x), y0 + y, pal[ch]);
+    }));
+    return this;
+  }
+  url(k = OUT_SCALE) {
+    const c = document.createElement('canvas'); c.width = this.w * k; c.height = this.h * k;
+    const g = c.getContext('2d');
+    this.px.forEach((col, i) => { if (col) { g.fillStyle = col; g.fillRect((i % this.w) * k, Math.floor(i / this.w) * k, k, k); } });
+    return c.toDataURL('image/png');
+  }
+}
+
+// ---------- 눈 · 입 도트 (왼쪽 눈 기준 10칸, 오른쪽은 좌우 뒤집어 찍음. 바깥쪽 = 왼쪽) ----------
+// K 윗눈꺼풀·속눈썹 · P 눈동자 · D 진한 홍채 · I 홍채 · L 밝은 홍채 · W 반짝이 · E 흰자 · s 아래 속눈썹 · S 눈두덩
+const EYES = {
+  0: ['..KKKKKK..', '.KKKKKKKKK', 'KKPPPPWWWK', '.EPPPPWWWE', '.EDPPPPWDE', '.EDDPPDDDE', '.EIIDDIIIE', '.EIIIIIWIE', '..LLLLLLL.', '...LLLL...'],   // 반짝
+  1: ['..........', '...PPPP...', '..PPPPWW..', '.PPPPPWWP.', '.PPPPPPPP.', '.PPPPPPPP.', '.PPWPPPPP.', '..PPPPPP..', '...PPPP...'],                       // 초롱
+  2: ['..........', '..........', '..........', '..........', '..KKKKKK..', '.K......K.', 'K........K'],                                             // 방긋
+  3: ['..........', '..........', 'KKKKKKKKKK', 'KKPPPPPWWK', '.EPPPPPWWE', '.EDDDDDIIE', '..LLLLLLL.', '....ss....'],                                 // 새침
+  4: ['..........', '..........', '..........', 'SSSSSSSSSS', 'KKKKKKKKKK', '.EPPPWPPPE', '.EIIIIIIIE', '..LLLLLL..', '..SSSSSS..'],                     // 퀭
+  happy: ['..........', '..........', '..........', '..........', '..KKKKKK..', '.K......K.', 'K........K'],
+  sad: ['..........', '..........', 'KKKKKKKKKK', 'KKPPPPPWWK', '.EDDPPDDDE', '.EIIDDDIIE', '..LLLLLLL.'],
+  sleep: ['..........', '..........', '..........', '..........', '..........', '..........', 'KKKKKKKKKK', '.K..K..K..'],
+  wow: ['..KKKKKK..', '.KKKKKKKKK', 'KEEPPPPWWK', '.EPPPPPWWE', '.EPPPPPPPE', '.EDPPPPPDE', '.EIDDDDDIE', '..LLLLLLL.', '...LLLLL..'],
+};
+const MOUTHS = {
+  idle: ['MM', 'mm'], happy: ['MMMMM', 'MPPPM', '.MMM.'], sad: ['.MMM.', 'M...M'], sleep: ['.m.'], wow: ['.MM.', 'MPPM', 'MPPM', '.MM.'],
+};
+
+// ---------- 머리 모양 (뒷머리 · 앞머리) ----------
+const SKULL = ell(28, 22, 21, 19);
+// 앞머리 끝: 뾰족뾰족한 가닥 (5칸마다 한 가닥)
+const TIP = [0, 1, 3, 1, 0];
+const fringe = (base, x) => base + TIP[(x + 1) % 5] - (x % 10 < 5 ? 0 : 1);
+const strandLine = (base, x, y) => (x + 1) % 5 === 0 && y > base - 7;            // 가닥 사이 진한 선
+const HAIRS = {
+  0: { // 단발
+    back: and(or(SKULL, rect(7, 22, 48, 46)), cut([7, 46], [48, 46], [8, 46], [47, 46], [7, 45], [48, 45])),
+    front: or(and(SKULL, (x, y) => y < fringe(22, x)), lock(8, 12, 20, 46, 10), lock(43, 47, 20, 46, 45)),
+    fb: 22,
+  },
+  1: { // 긴머리
+    back: and(or(SKULL, rect(7, 22, 48, 62)), cut([7, 62], [48, 62], [8, 62], [47, 62], [7, 61], [48, 61])),
+    front: or(and(SKULL, (x, y) => y < fringe(22, x)), lock(8, 12, 20, 58, 10), lock(43, 47, 20, 58, 45)),
+    fb: 22, strands: true,
+  },
+  2: { // 양갈래
+    back: or(SKULL, rect(7, 22, 48, 36), ell(5.5, 41, 5.5, 14), ell(50.5, 41, 5.5, 14)),
+    front: or(and(SKULL, (x, y) => y < fringe(21, x)), lock(8, 11, 20, 38, 9), lock(44, 47, 20, 38, 46)),
+    fb: 21, ties: [[1, 25], [48, 25]],
+  },
+  3: { // 똥머리
+    back: or(SKULL, rect(7, 22, 48, 36)),
+    front: or(and(SKULL, (x, y) => y < fringe(21, x)), lock(8, 11, 20, 38, 9), lock(44, 47, 20, 38, 46)),
+    fb: 21, bun: ell(28, 6.5, 8, 6),
+  },
+  4: { // 숏컷
+    back: or(ell(28, 21.5, 21, 18.5), rect(8, 22, 47, 33)),
+    front: or(and(ell(28, 21.5, 21, 18.5), (x, y) => y < 14 + (x - 7) * 0.28 + TIP[x % 5]), rect(8, 18, 10, 33), rect(45, 18, 47, 33)),
+    fb: 20,
+  },
+  5: { // 뽀글
+    back: and(bumpy(28, 22, 22.5, 20.5, 8, 0.1), (x, y) => y < 47),
+    front: and(ell(28, 22, 22, 20), (x, y) => y < 19 + 3 * Math.abs(Math.sin((x + 1) * 0.6)) || x < 11 || x > 44),
+    curls: true,
+  },
+  6: { // 폭탄머리
+    back: bumpy(28, 19, 27.4, 19.5, 9, 0.08),
+    front: and(ell(28, 19, 27, 19), (x, y) => y < 18 + 3 * Math.abs(Math.sin((x + 2) * 0.55)) || x < 10 || x > 45),
+    curls: true,
+  },
+  7: { // 웨이브 장발 (가르마)
+    back: (x, y) => SKULL(x, y) || (y >= 20 && y <= 64 && x >= 6 - Math.round(Math.sin(y / 2.6) * 2) && x <= 49 + Math.round(Math.sin(y / 2.6 + 1) * 2)),
+    front: (x, y) => (SKULL(x, y) && y < 12 + Math.abs(x + 0.5 - 28) * 0.62) || ((x <= 12 + Math.round(Math.sin(y / 2.6) * 1.5) || x >= 43 + Math.round(Math.sin(y / 2.6 + 1) * 1.5)) && y >= 14 && y <= 58 && x >= 5 && x <= 50),
+    strands: true,
+  },
+};
+
+// ---------- 옷 ----------
+function drawOutfit(S, o, cl, sk) {
+  const C = ramp(cl, -0.5), Wt = { o: '#8E8796', s: '#DCD8E4', b: '#FFFFFF', h: '#FFFFFF' };
+  const navy = ramp('#3B4266', -0.45), shoe = ramp('#3A2A33', -0.4);
+  const SK = { o: sk.o, s: sk.s, b: sk.b, h: sk.b };
+  const legs = (r = SK) => { S.fill(rect(20, 55, 25, 65), r); S.fill(rect(30, 55, 35, 65), r); };
+  const shoes = (r = shoe) => { S.fill(and(rect(19, 64, 26, 69), cut([19, 64], [26, 64])), r, { hl: true }); S.fill(and(rect(29, 64, 36, 69), cut([29, 64], [36, 64])), r, { hl: true }); };
+  const socks = () => { S.fill(rect(20, 60, 25, 64), Wt, { noTopLine: true }); S.fill(rect(30, 60, 35, 64), Wt, { noTopLine: true }); };
+  const arms = (sleeve, r = C) => {
+    for (const x0 of [12, 39]) {
+      S.fill(rect(x0, 42, x0 + 4, 53), SK);
+      S.fill(and(rect(x0, 52, x0 + 4, 56), cut([x0, 56], [x0 + 4, 56])), SK);                         // 손
+      if (sleeve) S.fill(and(rect(x0, 41, x0 + 4, sleeve), cut([x0 === 12 ? 12 : 43, 41])), r);
+    }
+  };
+  const torso = (r, y1 = 54, x0 = 17, x1 = 38) => S.fill(and(rect(x0, 40, x1, y1), cut([x0, 40], [x1, 40], [x0 + 1, 40], [x1 - 1, 40])), r);
+  const aline = (y0, y1, r, opts = {}) => S.fill((x, y) => y >= y0 && y <= y1 && Math.abs(x + 0.5 - 28) <= 10.5 + Math.max(0, (y - y0 - 4)) * 0.5, r, opts);
+  const pants = r => { S.fill(rect(19, 52, 36, 57), r); S.fill(rect(20, 55, 26, 64), r); S.fill(rect(29, 55, 35, 64), r); };
+  const collar = () => S.stamp(['wwww....wwww', '.wwwww.wwww.', '..www..www..'], 22, 40, { w: '#FFFFFF' });
+  switch (o) {
+    case 0: // 티셔츠 + 반바지
+      legs(); socks(); shoes();
+      S.fill(rect(18, 51, 37, 58), navy); S.fill(rect(27, 54, 28, 58), flat(navy.o));
+      arms(46); torso(C, 52);
+      S.stamp(['oooooooooo'], 23, 41, { o: C.o });
+      break;
+    case 1: // 원피스
+      legs(); socks(); shoes();
+      arms(44); aline(40, 59, C, { paint: (x, y, c) => y > 50 && c === C.b && x % 4 === 0 ? C.s : null });
+      collar();
+      S.stamp(['r.r', '.r.', 'r.r'], 27, 42, { r: C.o });
+      break;
+    case 2: // 후드티 + 바지
+      shoes(); pants(navy); S.fill(rect(27, 57, 28, 64), flat(navy.o));
+      arms(52); torso(C, 54, 16, 39);
+      S.fill(and(ell(28, 41, 9, 3), (x, y) => y >= 40), C);
+      S.stamp(['w....w', 'w....w', 'w....w', 'o....o'], 25, 42, { w: '#FFFFFF', o: '#B8B0C2' });
+      S.stamp(['oooooooooooo'], 22, 49, { o: C.o });
+      break;
+    case 3: // 셔츠 + 넥타이
+      shoes(); pants(navy); S.fill(rect(27, 57, 28, 64), flat(navy.o));
+      arms(52, Wt); torso(Wt, 54);
+      S.stamp(['WWW....WWW', '.WWW..WWW.', '..W....W..'], 23, 40, { W: '#C9C2D0' });
+      S.stamp(['.tt.', '.tt.', 'tttt', 'tttt', 'tTTt', 'tTTt', '.TT.', '..T.'], 26, 41, { t: C.b, T: C.s });
+      break;
+    case 4: // 세일러
+      legs(); socks(); shoes();
+      arms(45, Wt); torso(Wt, 50);
+      aline(49, 58, C, { paint: (x, y, c) => c === C.b && x % 2 === 0 ? C.s : null });
+      S.stamp(['cccccccccccccccc', 'ccc.wwwwwwww.ccc', '.ccc.wwwwww.ccc.', '..ccc.wwww.ccc..', '...ccc.ww.ccc...', '....ccc..ccc....', '.....cccccc.....'], 20, 40, { c: C.b, w: '#FFFFFF' });
+      S.stamp(['rr.rr', 'rrrrr', 'rr.rr', '.r.r.'], 26, 46, { r: '#DB072F' });
+      break;
+    case 5: // 멜빵
+      legs(); socks(); shoes();
+      arms(45, Wt); torso(Wt, 54);
+      S.fill(or(rect(19, 47, 36, 58), rect(19, 40, 22, 47), rect(33, 40, 36, 47)), C);
+      S.fill(rect(27, 54, 28, 58), flat(C.o));
+      S.stamp(['yy', 'yy'], 20, 47, { y: '#FFC93C' }); S.stamp(['yy', 'yy'], 34, 47, { y: '#FFC93C' });
+      S.stamp(['oooooo', 'o....o', 'oooooo'], 25, 50, { o: C.o });
+      break;
+    case 6: // 토가 (밤티)
+      S.fill(rect(20, 64, 26, 68), ramp('#B9824E', -0.45)); S.fill(rect(29, 64, 35, 68), ramp('#B9824E', -0.45));
+      arms(0);
+      aline(40, 65, Wt, { paint: (x, y, c) => c === Wt.b && (x + y) % 6 === 0 && y > 44 ? Wt.s : null });
+      S.fill((x, y) => y >= 40 && y <= 56 && Math.abs((x - 18) - (y - 40) * 1.2) <= 1.4, C);   // 어깨띠
+      break;
+  }
+}
+
+// ---------- 소품 ----------
+const EAR = ['o.........', 'oo........', 'obo.......', 'obbo......', 'obpbo.....', 'obppbo....', 'obpppbo...', 'obppppbo..', 'obpppppbo.', 'obbbbbbbbo'];
+function drawAccessory(S, a, hr) {
+  const D = '#2B1B24';
+  switch (a) {
+    case 1: S.stamp(['ooo.....ooo', 'obbo...obbo', 'obbbo.obbbo', 'obhbbkbbhbo', 'obbbbkbbbbo', 'obbbo.obbbo', 'obbo...obbo', 'ooo.....ooo'], 36, 5, { o: '#A3123A', b: '#FF5C83', h: '#FFB3C6', k: '#C81E4A' }); break;
+    case 2: S.stamp(['...o...', '..oyo..', 'ooyyyoo', 'oyyhyyo', '.oyyyo.', 'oyo.oyo', 'oo...oo'], 11, 13, { o: '#B57E00', y: '#FFD44D', h: '#FFF3B0' }); break;
+    case 3: {
+      const ring = ['..oooooooo..', '.o........o.', 'o..........o', 'o..........o', 'o..........o', 'o..........o', 'o..........o', '.o........o.', '..oooooooo..'];
+      S.stamp(ring, 13, 25, { o: D }).stamp(ring, 31, 25, { o: D }).stamp(['oooooo'], 25, 28, { o: D });
+      break;
+    }
+    case 4: {
+      const pal = { o: hr.o, b: hr.b, p: '#FFB3C6' };
+      S.stamp(EAR, 8, 0, pal).stamp(EAR, 38, 0, pal, true);
+      break;
+    }
+    case 5: [[11, 10, '#FF8FB1'], [18, 7, '#FFD44D'], [25, 6, '#FFFFFF'], [32, 7, '#C9A8FF'], [39, 10, '#FF8FB1']]
+      .forEach(([x, y, c]) => S.stamp(['.cc.', 'cyyc', 'cyyc', '.cc.'], x, y, { c, y: '#FFB000' }));
+      break;
+    case 6: { // 천사 날개 머리띠 + 금색 머리띠
+      const wing = ['......oo', '....oowo', '..oowwwo', '.owwwwso', 'owwwsso.', 'owwsso..', '.osso...', '..oo....'];
+      S.stamp(wing, 0, 13, { o: '#9C93A8', w: '#FFFFFF', s: '#DCD6E6' }).stamp(wing, 48, 13, { o: '#9C93A8', w: '#FFFFFF', s: '#DCD6E6' }, true);
+      for (let x = 9; x <= 46; x++) { const y = Math.round(11 + ((x + 0.5 - 28) / 19) ** 2 * 4); S.set(x, y, '#FFD44D'); S.set(x, y + 1, '#E0A400'); }
+      break;
+    }
+  }
+}
+
+function drawAvatar(a, mood) {
+  const S = new Sprite();
+  const hr = ramp(HAIR[a.hc], -0.5);
+  if (HAIR[a.hc] === '#3B2A2E') { hr.o = '#1A1114'; hr.h = '#6B5560'; hr.s = '#2C1F23'; }
+  const sk0 = SKIN[a.s], sk = { o: shade(sk0, -0.38), s: shade(sk0, -0.07), b: sk0, h: sk0 };
+  const H = HAIRS[a.h] || HAIRS[0];
+  const hairPaint = (x, y, c, r) => {
+    if (c === r.o) return null;
+    if (H.fb && strandLine(H.fb, x, y) && y < H.fb + 4) return r.s;
+    if (H.strands && y > 34 && (x + 1) % 5 === 0) return r.s;
+    if (H.curls && (x * 3 + y * 5) % 9 === 0) return r.h;
+    if (H.curls && (x * 5 + y * 3) % 13 === 0) return r.s;
+    return null;
+  };
+
+  // 1) 뒷머리 · 고양이귀(뒤) · 2) 몸 · 3) 얼굴
+  S.fill(H.back, hr, { paint: hairPaint });
+  if (H.bun) S.fill(H.bun, hr, { hl: true, paint: (x, y, c, r) => c !== r.o && (x + y) % 4 === 0 ? r.s : null });
+  if (a.a === 4) drawAccessory(S, 4, hr);
+  drawOutfit(S, a.o, CLOTH[a.oc], sk);
+  S.fill(rect(25, 38, 30, 41), { o: sk.o, s: shade(sk0, -0.15), b: shade(sk0, -0.15), h: shade(sk0, -0.15) });   // 목
+  S.fill(ell(28, 26, 17.5, 15.5), sk);
+
+  const iris = HAIR[a.hc] === '#3B2A2E' ? '#6E6690' : mix(HAIR[a.hc], '#6B6585', 0.5);
+  const pal = {
+    K: '#22161C', P: '#1E1626', D: mix(iris, '#1E1626', 0.45), I: iris, L: mix(iris, '#FFFFFF', 0.45), W: '#FFFFFF', E: '#FFFFFF',
+    s: shade(sk0, -0.3), S: shade(sk0, -0.14), M: '#D45F78', m: '#F09AAE', P2: '#FF8FA6', T: '#8FD0FF', B: hr.o,
+  };
+  const eyeRows = EYES[mood] || EYES[a.e] || EYES[0];
+  const ey = 25;
+  // 볼터치 (두 겹)
+  if (!(a.e === 4 && mood === 'idle')) {
+    const b1 = mix(sk0, '#FF6F91', 0.28), b2 = mix(sk0, '#FF6F91', 0.48);
+    const blush = ['..bbbbb.', '.bBBBBBb', '.bBBBBBb', '..bbbbb.'];
+    S.stamp(blush, 10, 33, { b: b1, B: b2 }).stamp(blush, 38, 33, { b: b1, B: b2 }, true);
+  }
+  S.stamp(eyeRows, 14, ey, pal);
+  S.stamp(eyeRows, 32, ey, pal, true);
+  if ([EYES[0], EYES.wow, EYES.sad].includes(eyeRows)) { S.set(13, ey + 1, pal.K); S.set(12, ey, pal.K); S.set(42, ey + 1, pal.K); S.set(43, ey, pal.K); }
+  if (eyeRows === EYES[3]) { S.set(13, ey + 2, pal.K); S.set(12, ey + 1, pal.K); S.set(11, ey, pal.K); S.set(42, ey + 2, pal.K); S.set(43, ey + 1, pal.K); S.set(44, ey, pal.K); }
+  if ((a.e === 4 && mood === 'idle') || mood === 'sad') S.stamp(['.....BB', '...BB..', '.BB....', 'B......'], 15, ey - 2, pal).stamp(['.....BB', '...BB..', '.BB....', 'B......'], 34, ey - 2, pal, true);
+  if (mood === 'sad') S.stamp(['T', 'TT', 'TT'], 15, ey + 8, pal);
+  S.set(28, 35, shade(sk0, -0.2));                                                  // 코
+  const mouth = MOUTHS[mood] || MOUTHS.idle;
+  const mx = 28 - Math.floor(mouth[0].length / 2), my = 38;
+  if (!a.f || mood !== 'idle') S.stamp(mouth, mx, my, { M: pal.M, m: pal.m, P: pal.P2 });
+  // 4) 수염
+  const beard = { o: hr.o, s: hr.s, b: hr.b, h: hr.h };
+  if (a.f === 2) S.fill(and(ell(28, 38, 16, 10.5), (x, y) => y >= 34), beard, { paint: (x, y, c, r) => c !== r.o && (x * 2 + y) % 4 === 0 ? r.s : null });
+  if (a.f === 1 || a.f === 2) S.stamp(['oo..........oo', '.oobbbbbbbboo.', '..oooooooooo..'], 21, 35, { o: hr.o, b: hr.b });
+  if (a.f === 3) S.fill(ell(28, 44, 3, 4), beard);
+  if (a.f === 2 && mood !== 'idle') S.stamp(mouth, mx, my + 1, { M: pal.M, m: pal.m, P: pal.P2 });
+  // 5) 앞머리 (얼굴 위에) + 천사링
+  S.fill(and(H.front, H.back), hr, { hl: true, paint: hairPaint });
+  for (let x = 12; x <= 43; x++) {
+    const y = Math.round(10 + ((x + 0.5 - 28) / 15) ** 2 * 4);
+    const here = S.get(x, y);
+    if (here === hr.b || here === hr.h || here === hr.s) { S.set(x, y, hr.h); if (x % 3 === 1) S.set(x, y + 1, hr.h); }
+  }
+  if (H.ties) H.ties.forEach(([x, y]) => S.stamp(['oo..oo', 'opooop', 'oppkpo', 'opooop', 'oo..oo'], x, y, { o: '#A3123A', p: '#FF5C83', k: '#C81E4A' }));
+  // 6) 소품 (고양이귀는 이미 뒤에 그림)
+  if (a.a !== 4) drawAccessory(S, a.a, hr);
+  return S;
+}
+
+function drawMascot(mood) {
+  const S = new Sprite(24, 24);
+  S.fill(ell(12, 12.5, 10.5, 10), ramp('#DB072F', -0.5), { hl: true });
+  if (mood === 'happy') S.stamp(['.KK..KK.', 'K..KK..K'], 8, 10, { K: '#2B1B24' });
+  else if (mood === 'sleep') S.stamp(['KKK..KKK'], 8, 11, { K: '#2B1B24' });
+  else S.stamp(['WW..WW', 'WK..WK', 'KK..KK'], 9, 9, { W: '#FFFFFF', K: '#2B1B24' });
+  S.stamp(['b......b'], 8, 14, { b: '#FF7E9A' });
+  return S;
+}
+
+function pixelTag(key, draw, wrapCls) {
+  let src = pxCache.get(key);
+  if (!src && canDraw) { try { src = draw().url(); pxCache.set(key, src); } catch { src = ''; } }
+  return `<span class="${wrapCls}" aria-hidden="true"><img class="px-img" src="${src || ''}" alt="" draggable="false"></span>`;
+}
+
+// (예전 도트 꾸미기 캐릭터 — 지금은 쓰지 않음)
+function oldAvatarSVG(raw, mood = 'idle', cls = '') {
+  const a = normAvatar(raw);
+  const key = `a${mood}-${PART_KEYS.map(k => a[k]).join('')}`;
+  return pixelTag(key, () => drawAvatar(a, mood), `av px ch-${mood} ${cls}`);
+}
+
+// =====================================================================
+//  12간지 픽셀 캐릭터 (assets/zodiac) + 소품 (assets/acc)
+//  avatar = { z: 띠 0~11 (12 = 밤티), h: 머리 소품, f: 얼굴 소품, b: 탈것·등 }
+// =====================================================================
+export const ZODIAC = ['쥐', '소', '호랑이', '토끼', '용', '뱀', '말', '양', '원숭이', '닭', '개', '돼지', '밤티'];
+export const BAMTI = 12;
+export const ACC_SLOTS = [
+  ['h', '머리', ['없음', '리본', '왕관', '고깔모자', '꽃관']],
+  ['f', '얼굴', ['없음', '안경', '선글라스']],
+  ['b', '탈것', ['없음', '빨간 자동차', '람보르기니', '포르쉐']],
+];
+const ACC_IMG = { h: [null, 'ribbon', 'crown', 'party', 'flower'], f: [null, 'glasses', 'sun'], b: [null, 'car', 'lambo', 'porsche'] };
+const ACC_RATIO = {"ribbon": 0.803, "glasses": 0.421, "crown": 0.768, "party": 1.34, "flower": 0.525, "sun": 0.385, "car": 0.788, "lambo": 0.653, "porsche": 0.658};   // 소품 그림 높이/너비
+// 소품별 붙이는 법: [기준, 너비(두 눈 사이 거리 배수), 머리에 파묻히는 비율, 옆으로 비킴(눈 사이 거리 배수)]
+const ACC_SPEC = {
+  ribbon: ['top', 0.95, 0.32, 0], crown: ['top', 1.05, 0.25, 0], party: ['top', 0.75, 0.15, 0.1], flower: ['top', 1.9, 0.4, 0],
+  glasses: ['eye', 2.15], sun: ['eye', 2.05],
+  car: ['car', 0.7], lambo: ['car', 0.9], porsche: ['car', 0.9],
+};
+// 띠별 얼굴 위치 [두 눈 가운데 x, 눈 높이 y, 두 눈 사이 거리, 머리 꼭대기 y] (정사각형 그림 대비 비율)
+const FACE = [[0.499, 0.6, 0.269, 0.255], [0.497, 0.552, 0.279, 0.178], [0.477, 0.538, 0.292, 0.212], [0.489, 0.605, 0.259, 0.136], [0.485, 0.521, 0.271, 0.156], [0.473, 0.455, 0.244, 0.252], [0.404, 0.489, 0.254, 0.108], [0.494, 0.567, 0.247, 0.204], [0.498, 0.578, 0.25, 0.201], [0.498, 0.586, 0.26, 0.187], [0.495, 0.578, 0.254, 0.261], [0.497, 0.597, 0.287, 0.289], [0.5, 0.385, 0.1, 0.17]];
+export const zodiacOfYear = y => ((y - 1900) % 12 + 12) % 12;   // 1900년 = 쥐띠
+
+export function normAvatar(a = {}) {
+  const n = (v, mx) => Number.isInteger(v) && v >= 0 && v <= mx ? v : 0;
+  if (a && Number.isInteger(a.z)) return { z: n(a.z, 12), h: n(a.h, 4), f: n(a.f, 2), b: n(a.b, 3) };
+  // 예전 캐릭터로 저장된 사람: 늘 같은 띠가 되도록
+  const k = JSON.stringify(a || {}).split('').reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) | 0, 7);
+  return { z: Math.abs(k) % 12, h: 0, f: 0, b: 0 };
+}
+export function randomAvatar() {
+  const r = n => Math.floor(Math.random() * n);
+  return { z: r(12), h: Math.random() < 0.5 ? 0 : r(5), f: Math.random() < 0.7 ? 0 : r(3), b: Math.random() < 0.75 ? 0 : 1 + r(3) };
+}
+
+const pct = v => `${(v * 100).toFixed(2)}%`;
+function accTag(name, z) {
+  const [kind, wm, sink = 0, side = 0] = ACC_SPEC[name], [ex, ey, g, ht] = FACE[z];
+  let w, x, y;
+  if (kind === 'car') { w = wm; x = 0.5 - w / 2; y = 1 - w * ACC_RATIO[name]; }
+  else {
+    w = wm * g;
+    const h = w * ACC_RATIO[name];
+    if (kind === 'eye') { x = ex - w / 2; y = ey - h / 2; }
+    else { x = ex + side * g - w / 2; y = ht - h * (1 - sink); }
+  }
+  return `<img class="px-acc acc-${kind}" src="assets/acc/${name}.webp" alt="" draggable="false" style="width:${pct(w)};left:${pct(x)};top:${pct(y)}">`;
+}
+
+// 캐릭터 그림. 예전처럼 avatarSVG 라는 이름으로 어디서나 씀. 표정(mood)은 CSS 모션·효과로 표현
+export function avatarSVG(raw, mood = 'idle', cls = '') {
+  const a = normAvatar(raw);
+  const wear = [ACC_IMG.h[a.h], ACC_IMG.f[a.f]].filter(Boolean).map(n => accTag(n, a.z)).join('');
+  const car = ACC_IMG.b[a.b];
+  // 동물 + 머리·얼굴 소품을 한 상자(rider)에 넣어서, 차에 탈 때는 상자째로 줄이고 올림 → 소품이 같이 따라감
+  const rider = `<span class="px-rider"><img class="px-img" src="assets/zodiac/z${a.z}.webp" alt="" draggable="false" decoding="async">${wear}</span>`;
+  return `<span class="av px ch-${mood}${car ? ' riding ride-' + car : ''} ${cls}" aria-hidden="true">${rider}${car ? accTag(car, a.z) : ''}</span>`;
+}
+
+// 마스코트 (픽셀)
+export function mascotSVG(mood = 'idle', cls = '') {
+  return pixelTag(`m${mood}`, () => drawMascot(mood), `ch mascot px ch-${mood} ${cls}`);
+}
+// 벡터 원본이 필요할 때 (디자인 시스템 문서 등)
+export { avatarVector, mascotVector };
