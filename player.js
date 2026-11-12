@@ -1,6 +1,6 @@
 import { rpc, $, esc, jitter, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE } from './common.js';
 import { GAMES, KIND_LABEL, kindOf, fmtPlay } from './questions-format.js';
-import { avatarSVG, normAvatar, randomAvatar, ZODIAC, ACC_SLOTS, BAMTI, zodiacOfYear } from './characters.js';
+import { avatarSVG, normAvatar, randomAvatar, PARTS, PART_KEYS, PRESETS, HAIR, SKIN, CLOTH } from './characters.js';
 
 if (!configured) { showConfigError(); throw new Error('config.js not set'); }
 
@@ -23,7 +23,7 @@ function uuid() {
 let myId = store.get('qs.id');
 if (!myId) { myId = uuid(); store.set('qs.id', myId); }
 let nick = store.get('qs.nick');
-let avatar = (() => { try { const a = JSON.parse(store.get('qs.avatar')); return a ? normAvatar(a) : null; } catch { return null; } })() || randomAvatar();
+let avatar = (() => { try { return normAvatar(JSON.parse(store.get('qs.avatar'))); } catch { return null; } })() || randomAvatar();
 let game = null;
 let tick = null;
 let renderSeq = 0;               // 비동기 응답이 늦게 와서 화면을 덮어쓰지 않도록
@@ -52,7 +52,6 @@ function renderJoin(force = false) {
       <input id="nick" name="nick" maxlength="20" placeholder="아바타 이름 (최대 20자)" enterkeyhint="done" required aria-label="아바타 이름">
       <div class="err"></div>
       <div class="tabs" id="tabs" role="tablist"></div>
-      <div class="year-row" id="year-row"><input id="year" type="number" inputmode="numeric" min="1920" max="2025" placeholder="태어난 해 (예: 1996)" aria-label="태어난 해"><button class="btn ghost sm" type="button" id="year-go">내 띠 찾기</button></div>
       <div id="pickers"></div>
       <div class="maker-actions">
         <button class="btn ghost" type="button" id="rand">랜덤</button>
@@ -67,19 +66,19 @@ function renderJoin(force = false) {
   input.addEventListener('input', showName);
   showName();
 
-  const TABS = [['z', '띠', ZODIAC], ...ACC_SLOTS];
-  let tab = 'z';
+  const SWATCH = { hc: HAIR, s: SKIN, oc: CLOTH };
+  let tab = 'h';
+  const thumb = (k, i) => SWATCH[k]
+    ? `<span class="swatch" style="background:${SWATCH[k][i]}"></span>`
+    : avatarSVG({ ...avatar, [k]: i }, 'idle');
   const paint = () => {
     $('#pv').innerHTML = avatarSVG(avatar, 'idle', 'sticker');
-    $('#tabs').innerHTML = TABS.map(([k, label]) =>
-      `<button type="button" class="tab" role="tab" data-tab="${k}" aria-selected="${k === tab}">${label}</button>`).join('');
-    $('#year-row').classList.toggle('hidden', tab !== 'z');
-    const list = TABS.find(t => t[0] === tab)[2];
-    $('#pickers').innerHTML = `<div class="picks parts">${list.map((n, i) =>
-      `<button type="button" class="pick" data-k="${tab}" data-v="${i}" aria-pressed="${avatar[tab] === i}">${avatarSVG({ ...avatar, [tab]: i })}<span>${n}</span></button>`).join('')}</div>`;
+    $('#tabs').innerHTML = PART_KEYS.map(k =>
+      `<button type="button" class="tab" role="tab" data-tab="${k}" aria-selected="${k === tab}">${PARTS[k].label}</button>`).join('');
+    $('#pickers').innerHTML = `<div class="picks ${SWATCH[tab] ? 'swatches' : ''}">${PARTS[tab].names.map((n, i) =>
+      `<button type="button" class="pick" data-k="${tab}" data-v="${i}" aria-pressed="${avatar[tab] === i}">${thumb(tab, i)}<span>${n}</span></button>`).join('')}</div>`;
   };
   paint();
-  const wiggle = () => { const el = $('#pv .av'); el.classList.remove('wiggle'); void el.offsetWidth; el.classList.add('wiggle'); };
   $('#tabs').addEventListener('click', e => {
     const t = e.target.closest('.tab');
     if (t) { tab = t.dataset.tab; paint(); }
@@ -88,20 +87,15 @@ function renderJoin(force = false) {
     const b = e.target.closest('.pick');
     if (!b) return;
     avatar = { ...avatar, [b.dataset.k]: Number(b.dataset.v) };
-    paint(); wiggle();
-  });
-  $('#year-go').addEventListener('click', () => {
-    const y = Number($('#year').value);
-    if (!(y >= 1900 && y <= 2100)) { $('#year').focus(); return; }
-    avatar = { ...avatar, z: zodiacOfYear(y) };
-    paint(); wiggle();
+    paint();
+    $('#pv svg').classList.add('wiggle');
   });
   $('#bamti').addEventListener('click', () => {
-    avatar = { z: BAMTI, h: 0, f: 0, b: 0 };
+    avatar = { ...PRESETS['밤티'] };
     if (!input.value.trim()) { input.value = '밤티'; showName(); }
-    paint(); wiggle();
+    paint(); $('#pv svg').classList.add('wiggle');
   });
-  $('#rand').addEventListener('click', () => { avatar = randomAvatar(); paint(); wiggle(); });
+  $('#rand').addEventListener('click', () => { avatar = randomAvatar(); paint(); $('#pv svg').classList.add('wiggle'); });
 
   form.addEventListener('submit', async e => {
     e.preventDefault();
