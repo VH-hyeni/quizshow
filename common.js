@@ -1,5 +1,5 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-import { SUPABASE_URL, SUPABASE_KEY, TITLE } from './config.js';
+import { SUPABASE_URL, SUPABASE_KEY, TITLE } from './config.js?v=20261118c';
 
 export { TITLE };
 // 주소 끝의 '/', '/rest/v1' 같은 꼬리나 'NEXT_PUBLIC_..=' 같은 앞부분이 같이 복사돼도 바로잡음
@@ -71,6 +71,8 @@ export function remainingSec(game) {
 }
 
 // game 행을 실시간 구독. 연결이 끊겨도 주기적으로 다시 읽어 와서 화면이 멈추지 않게 함
+// 내가 진행 버튼을 누른 직후엔 실시간 알림을 기다리지 않고 바로 새 상태를 가져와요
+export let refreshGame = () => {};
 export function watchGame(onChange, onConn = () => {}) {
   let last = null;
   let lastT = -Infinity;
@@ -86,14 +88,24 @@ export function watchGame(onChange, onConn = () => {}) {
     const { data, error } = await sb.from('game').select('*').eq('id', 1).single();
     if (!error) apply(data);
   };
+  refreshGame = () => fetchNow().catch(() => {});
+  // 실시간 연결이 살아 있으면 가끔(15~25초)만 확인, 끊겼으면 자주(3~5초) 확인
+  let live = false, timer = null;
+  const schedule = () => {
+    clearTimeout(timer);
+    const wait = live ? 15000 + Math.random() * 10000 : 3000 + Math.random() * 2000;
+    timer = setTimeout(async () => { if (!document.hidden) await fetchNow().catch(() => {}); schedule(); }, wait);
+  };
   sb.channel('game-state')
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game' }, p => apply(p.new))
     .subscribe(status => {
-      onConn(status === 'SUBSCRIBED');
-      if (status === 'SUBSCRIBED') fetchNow();
+      live = status === 'SUBSCRIBED';
+      onConn(live);
+      if (live) fetchNow();
+      schedule();
     });
   fetchNow();
-  setInterval(fetchNow, 8000 + Math.random() * 4000);
+  schedule();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) fetchNow(); });
   return { refresh: fetchNow, get: () => last };
 }

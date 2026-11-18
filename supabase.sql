@@ -21,9 +21,17 @@ create table if not exists public.game (
   updated_at  timestamptz not null default now()
 );
 insert into public.game (id) values (1) on conflict do nothing;
+-- 단계 목록 (띠별 수다 'zodiac' 추가). 예전에 만든 표에도 적용되도록 다시 정의
+alter table public.game drop constraint if exists game_phase_check;
+alter table public.game add constraint game_phase_check
+  check (phase in ('lobby','question','closed','reveal','leaderboard','end','zodiac'));
 alter table public.game add column if not exists chat_on boolean not null default true;   -- 채팅 허용 여부
 alter table public.game add column if not exists chat_epoch int not null default 0;       -- 진행자가 채팅을 지울 때마다 +1 (스크린 채팅창 비우기 신호)
 alter table public.game add column if not exists map text not null default 'auto';
+alter table public.game add column if not exists auto_reveal boolean not null default false;  -- 시간 끝나면 정답까지 자동 공개
+alter table public.game add column if not exists lobby_title text;                            -- 대기 화면 큰 문구 (비우면 기본 문구)
+alter table public.game add column if not exists lobby_sub   text;                            -- 대기 화면 작은 문구
+alter table public.game add column if not exists spotlight   text;                            -- 스포트라이트 받는 참가자(짧은 id), 없으면 null
 alter table public.game add column if not exists chat_mode text not null default 'panel';  -- 채팅 표시: panel(오른쪽 채팅창) | bubble(캐릭터 머리 위 말풍선)         -- 스크린 맵: auto(자동) | doll(인형의 집) | stage(퀴즈 무대)
 
 -- 진행자 PIN 과 전체 문항(정답 포함). 참가자는 절대 읽을 수 없습니다.
@@ -41,6 +49,14 @@ create table if not exists public.players (
 );
 alter table public.players add column if not exists avatar jsonb not null default '{}'::jsonb;
 alter table public.players add column if not exists vip boolean not null default false;   -- 진행자가 지정한 '크게 보일 사람'
+
+-- 발표 슬라이드에 넣은 이미지 (진행자 화면에서 올리면 줄여서 저장)
+create table if not exists public.media (
+  id          serial primary key,
+  data        text not null,               -- data:image/webp;base64,...
+  created_at  timestamptz not null default now()
+);
+alter table public.media enable row level security;
 
 create table if not exists public.votes (
   player_id   uuid not null references public.players(id) on delete cascade,
@@ -156,7 +172,7 @@ returns jsonb language sql immutable as $$
                                             and (p ->> k)::numeric = floor((p ->> k)::numeric)
                                             and (p ->> k)::numeric between 0 and mx
                                        then (p ->> k)::numeric::int else 0 end), '{}'::jsonb)
-  from (values ('z', 12), ('h', 4), ('f', 2), ('b', 3)) as t(k, mx)   -- z 띠(12 = 밤티) · h 머리 소품 · f 얼굴 소품 · b 탈것
+  from (values ('z', 31), ('c', 9), ('h', 8), ('f', 4), ('b', 2)) as t(k, mx)   -- z 캐릭터 0~15 (8 = 밤티) · h 머리 소품 · f 얼굴 소품 · b 탈것
 $$;
 
 drop function if exists public.join_game(uuid, text);
@@ -470,12 +486,13 @@ begin
   for q in select * from jsonb_array_elements(p_questions) loop
     i := i + 1;
     kind := coalesce(q ->> 'kind', 'quiz');
-    if kind not in ('quiz','poll','game') then
-      raise exception '%번 문항: kind는 quiz, poll, game 중 하나여야 합니다.', i; end if;
+    if kind not in ('quiz','poll','game','slide') then
+      raise exception '%번 문항: kind는 quiz, poll, game, slide 중 하나여야 합니다.', i; end if;
     if coalesce(btrim(q ->> 'text'), '') = '' then
       raise exception '%번 문항: text가 비어 있습니다.', i; end if;
     if q ? 'show' and coalesce(q ->> 'show', '') not in ('live','reveal','hidden') then
       raise exception '%번 문항: 공개 방식은 실시간, 정답때, 비공개 중 하나입니다.', i; end if;
+    if kind = 'slide' then continue; end if;   -- 발표: 제목만 있으면 OK
     if kind = 'game' then
       if coalesce(q ->> 'game', '') not in ('order','reaction','tap') then
         raise exception '%번 문항: 미니게임 종류는 order, reaction, tap 중 하나입니다.', i; end if;
@@ -522,7 +539,10 @@ begin
   update game set
     phase      = 'question',
     q_index    = p_index,
-    question   = case when kind = 'game' then
+    question   = case when kind = 'slide' then
+                   jsonb_build_object('text', q -> 'text', 'kind', 'slide', 'options', '[]'::jsonb,
+                                      'lines', coalesce(q -> 'lines', '[]'::jsonb), 'image', q -> 'image', 'time_limit', 0)
+                 when kind = 'game' then
                    -- 미니게임: 3초 카운트다운 후 시작. seed 로 모두 같은 배치, delay 로 반응속도 신호 시각 결정
                    jsonb_build_object(
                      'text',     q -> 'text',
@@ -602,8 +622,97 @@ begin
   delete from results where true;
   if not p_keep_players then delete from players where true; end if;
   update game set phase = 'lobby', q_index = -1, question = null, correct = null,
-                  started_at = null, chat_epoch = chat_epoch + 1, updated_at = now() where id = 1;
+                  started_at = null, chat_epoch = chat_epoch + 1, spotlight = null, updated_at = now() where id = 1;
 end $$;
+
+-- ---------- 화면 설정 · 스포트라이트 ----------
+create or replace function public.host_set_settings(p_pin text, p_auto_reveal boolean, p_lobby_title text, p_lobby_sub text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  perform _check_pin(p_pin);
+  update game set
+    auto_reveal = coalesce(p_auto_reveal, auto_reveal),
+    lobby_title = nullif(btrim(left(coalesce(p_lobby_title, ''), 60)), ''),
+    lobby_sub   = nullif(btrim(left(coalesce(p_lobby_sub, ''), 80)), ''),
+    updated_at  = now()
+  where id = 1;
+end $$;
+
+create or replace function public.host_spotlight(p_pin text, p_sid text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  perform _check_pin(p_pin);
+  update game set spotlight = nullif(left(coalesce(p_sid, ''), 8), ''), updated_at = now() where id = 1;
+end $$;
+
+-- 스포트라이트 받는 사람 정보 (스크린에 그 캐릭터가 안 보일 때 가운데에 크게 띄우기용)
+create or replace function public.get_spot(p_sid text)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('id', left(id::text, 8), 'n', nickname, 'a', avatar, 'v', vip)
+  from players where left(id::text, 8) = p_sid limit 1
+$$;
+
+-- ---------- 발표 이미지 ----------
+create or replace function public.host_put_media(p_pin text, p_data text)
+returns int language plpgsql security definer set search_path = public as $$
+declare v int;
+begin
+  perform _check_pin(p_pin);
+  if p_data !~ '^data:image/(webp|png|jpeg|gif);base64,' then raise exception '이미지 파일만 올릴 수 있어요.'; end if;
+  if length(p_data) > 2000000 then raise exception '이미지가 너무 커요. (최대 약 1.5MB)'; end if;
+  insert into media (data) values (p_data) returning id into v;
+  return v;
+end $$;
+
+create or replace function public.get_media(p_id int)
+returns text language sql stable security definer set search_path = public as $$
+  select data from media where id = p_id
+$$;
+
+-- ---------- 앞뒤로 이동 (스크린·진행자 공용) ----------
+-- 이미 결과를 공개한 문항으로 가면 응답을 지우지 않고 결과 화면을 다시 보여 주고,
+-- 아직 안 한 문항이면 새로 시작해요. 발표 슬라이드는 그냥 보여 줘요.
+create or replace function public.host_goto(p_pin text, p_index int)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  q jsonb; kind text; r results%rowtype;
+begin
+  perform _check_pin(p_pin);
+  if p_index < 0 then
+    update game set phase = 'lobby', q_index = -1, question = null, correct = null, started_at = null, updated_at = now() where id = 1;
+    return;
+  end if;
+  select questions -> p_index into q from host_secret where id = 1;
+  if q is null then raise exception '%번 문항이 없습니다.', p_index + 1; end if;
+  kind := coalesce(q ->> 'kind', 'quiz');
+  select * into r from results where q_index = p_index;
+  if kind = 'slide' or not found then
+    perform host_show_question(p_pin, p_index);
+    return;
+  end if;
+  -- 결과 다시 보기: 문항 정보는 새로 만들되 응답은 그대로
+  perform host_show_question_view(p_index, q, kind);
+  update game set phase = 'reveal', correct = r.correct, updated_at = now() where id = 1;
+end $$;
+
+-- 문항을 화면에만 다시 띄움 (응답 삭제 없음)
+create or replace function public.host_show_question_view(p_index int, q jsonb, kind text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  update game set
+    q_index  = p_index,
+    question = case when kind = 'game' then
+                 jsonb_build_object('text', q -> 'text', 'options', '[]'::jsonb, 'kind', 'game', 'game', q ->> 'game',
+                   'size', coalesce((q ->> 'size')::int, 4), 'duration', coalesce((q ->> 'duration')::int, 10),
+                   'seed', 0, 'delay_ms', 0, 'time_limit', 0)
+               else jsonb_build_object('text', q -> 'text', 'options', q -> 'options', 'kind', kind,
+                   'ox', coalesce((q ->> 'ox')::boolean, false),
+                   'show', coalesce(q ->> 'show', case when kind = 'poll' then 'live' else 'reveal' end),
+                   'time_limit', 0) end,
+    updated_at = now()
+  where id = 1;
+end $$;
+revoke all on function public.host_show_question_view(int, jsonb, text) from public, anon, authenticated;
 
 -- ---------- 함수 실행 권한 --------------------------------------------
 revoke execute on function
@@ -661,7 +770,13 @@ grant execute on function
   public.host_close(text),
   public.host_reveal(text),
   public.host_set_phase(text, text),
-  public.host_reset(text, boolean)
+  public.host_reset(text, boolean),
+  public.host_put_media(text, text),
+  public.get_media(int),
+  public.host_goto(text, int),
+  public.host_set_settings(text, boolean, text, text),
+  public.host_spotlight(text, text),
+  public.get_spot(text)
 to anon, authenticated;
 
 -- ---------- 진행자 PIN 설정 ★ 여기를 바꾸세요 ★ -----------------------

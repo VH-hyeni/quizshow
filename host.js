@@ -1,7 +1,7 @@
-import { rpc, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, LABELS, TITLE, joinUrl } from './common.js';
-import { parseQuestions, toText, SAMPLE, TEMPLATES, KIND_LABEL, kindOf, GAMES, fmtPlay, showOf, SHOW_LABEL } from './questions-format.js';
-import { nextAction as flowNext, hostActions, PHASE_NAME } from './flow.js';
-import { avatarSVG } from './characters.js';
+import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, LABELS, TITLE, joinUrl } from './common.js?v=20261118c';
+import { parseQuestions, toText, SAMPLE, TEMPLATES, KIND_LABEL, kindOf, GAMES, fmtPlay, showOf, SHOW_LABEL } from './questions-format.js?v=20261118c';
+import { nextAction as flowNext, prevAction, hostActions, PHASE_NAME } from './flow.js?v=20261118c';
+import { avatarSVG } from './characters.js?v=20261118c';
 
 if (!configured) { showConfigError(); throw new Error('config.js not set'); }
 
@@ -13,6 +13,7 @@ let questions = [];      // 서버에 저장된 문항 (정답 포함)
 let game = null;
 let busy = false;
 let closeTimer = null;
+let revealKey = null;
 
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -112,7 +113,7 @@ function renderQList() {
       <span class="num">${i + 1}</span>
       <span class="t" title="${esc(q.text)}">${esc(q.text)}</span>
       <span class="tag k-${kindOf(q)}">${KIND_LABEL[kindOf(q)]}${kindOf(q) === 'quiz' ? ` · 정답 ${LABELS[q.answer]}` : kindOf(q) === 'ox' ? ` · ${q.answer === 0 ? 'O' : 'X'}` : ''}</span>
-      ${q.kind !== 'game' ? `<span class="tag k-show">${SHOW_LABEL[showOf(q)]}</span>` : ''}
+      ${q.kind !== 'game' && q.kind !== 'slide' ? `<span class="tag k-show">${SHOW_LABEL[showOf(q)]}</span>` : ''}${q.image ? '<span class="tag k-show">🖼</span>' : ''}
       <button class="btn ghost sm" type="button" data-start="${i}">시작</button>
     </li>`).join('');
 }
@@ -132,7 +133,7 @@ $('#qlist').addEventListener('click', e => {
 async function act(fn) {
   if (busy) return;
   busy = true; updateControls();
-  try { await fn(); msg($('#msg'), ''); }
+  try { await fn(); refreshGame(); msg($('#msg'), ''); }
   catch (err) { msg($('#msg'), err.message, 'err'); }
   finally { busy = false; updateControls(); }
 }
@@ -146,7 +147,8 @@ function hintFor(g) {
   const k = g.question?.kind;
   switch (g.phase) {
     case 'lobby': return g.q_total ? '참가자들이 QR로 입장하는 중이에요. 다 모이면 위 버튼으로 시작하세요.' : '오른쪽에서 문항을 만들고 "문항 저장"부터 눌러 주세요.';
-    case 'question': return k === 'game' ? '참가자들이 게임 중이에요. 시간이 끝나면 자동으로 종료돼요.' : '참가자들이 답을 고르는 중이에요. 시간이 끝나면 자동으로 마감돼요.';
+    case 'question': if (k === 'slide') return '스크린 칠판에 발표 내용이 나와 있어요. 설명이 끝나면 다음으로!';
+      return k === 'game' ? '참가자들이 게임 중이에요. 시간이 끝나면 자동으로 종료돼요.' : '참가자들이 답을 고르는 중이에요. 시간이 끝나면 자동으로 마감돼요.';
     case 'closed': return k === 'poll' ? '마감됐어요. 결과를 공개하면 스크린에 아바타들이 모여요.' : k === 'game' ? '게임이 끝났어요. 결과를 공개하면 스크린에 순위가 나와요.' : '마감됐어요. 정답을 공개하면 스크린에 누가 뭘 골랐는지 나와요.';
     case 'reveal': return '스크린에서 결과를 보여 주는 중이에요. 다음으로 넘어가세요.';
     case 'leaderboard': return '스크린에 현재 순위가 나와 있어요.';
@@ -160,6 +162,9 @@ function updateControls() {
   const btn = $('#next');
   btn.textContent = n.label;
   btn.disabled = busy || !n.run;
+  const p = prevAction(game, A);
+  $('#prev').textContent = p.label;
+  $('#prev').disabled = busy || !p.run;
   $('#hint').textContent = hintFor(game);
   const ph = game?.phase;
   document.querySelectorAll('[data-act]').forEach(b => {
@@ -172,6 +177,31 @@ function updateControls() {
 }
 
 $('#next').addEventListener('click', () => nextAction().run?.());
+$('#prev').addEventListener('click', () => prevAction(game, A).run?.());
+
+// 발표 슬라이드용 이미지 올리기: 긴 쪽 1600px 이하로 줄여서 저장 → 편집기에 '이미지: #번호' 넣기
+$('#img-pick').addEventListener('change', async e => {
+  const f = e.target.files?.[0];
+  e.target.value = '';
+  if (!f) return;
+  try {
+    msg($('#edit-msg'), '이미지를 올리는 중…', 'ok');
+    const bmp = await createImageBitmap(f);
+    const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    let data = c.toDataURL('image/webp', 0.85);
+    if (!data.startsWith('data:image/webp')) data = c.toDataURL('image/jpeg', 0.85);
+    const id = await rpc('host_put_media', { p_pin: pin, p_data: data });
+    const ed = $('#editor');
+    const pos = ed.selectionStart ?? ed.value.length;
+    const ins = `${pos && ed.value[pos - 1] !== '\n' ? '\n' : ''}이미지: #${id}\n`;
+    ed.value = ed.value.slice(0, pos) + ins + ed.value.slice(pos);
+    store.set('qs.editor', ed.value);
+    msg($('#edit-msg'), `✔ 이미지 #${id} 를 넣었어요. 발표(S:) 문항 안에 '이미지: #${id}' 줄이 있으면 칠판에 함께 나와요. "문항 저장"을 눌러 주세요.`, 'ok');
+  } catch (err) { msg($('#edit-msg'), err.message, 'err'); }
+});
 
 // 채팅 지우기 (스크린 채팅창도 비워짐). 채팅은 이 버튼이나 초기화 전까지 계속 남아요
 $('#chat-clear').addEventListener('click', () => {
@@ -194,6 +224,7 @@ $('#chat-toggle').addEventListener('click', () => {
 document.addEventListener('keydown', e => {
   if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
   if (e.code === 'Space' || e.key === 'ArrowRight') { e.preventDefault(); nextAction().run?.(); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); prevAction(game, A).run?.(); }
 });
 
 document.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => {
@@ -222,6 +253,13 @@ function onGame() {
   $('#curq').textContent = g.q_index >= 0 && g.question
     ? `[${KIND_LABEL[kindOf(g.question)]}] ${g.question.kind === 'game' ? (GAMES[g.question.game]?.name || g.question.text) : g.question.text}` : '';
   if (g.phase !== 'question') { clearTimeout(closeTimer); closeTimer = null; }
+  syncSettings(g);
+  // 자동 정답 공개: 마감되면 1.2초 뒤 공개
+  if (g.phase === 'closed' && g.auto_reveal && g.question?.kind !== 'slide' && revealKey !== g.started_at) {
+    revealKey = g.started_at;
+    const key = g.started_at;
+    setTimeout(() => { if (game.phase === 'closed' && game.started_at === key) A.reveal(); }, 1200);
+  }
   renderQList();
   updateControls();
   pollTally();
@@ -256,6 +294,7 @@ function renderBars(t) {
   $('#answered').textContent = `응답 ${t.voted}명 / 참가 ${t.players}명`;
   if (!g || g.q_index < 0 || !g.question || g.phase === 'lobby' && t.q_index < 0) { $('#bars').innerHTML = ''; return; }
   const q = g.question;
+  if (q.kind === 'slide') { $('#bars').innerHTML = ''; $('#answered').textContent = '발표 중'; return; }
   if (q.kind === 'game') return renderGameBoard(g);
   const ans = questions[g.q_index]?.kind === 'quiz' ? questions[g.q_index]?.answer : null;
   const counts = t.counts || q.options.map(() => 0);
@@ -298,11 +337,12 @@ function renderPeople() {
   const q = $('#ppl-search').value.trim();
   const list = q ? people.filter(p => p.n.includes(q)) : people;
   const vips = people.filter(p => p.v).length;
-  $('#ppl-count').textContent = people.length ? `(${people.length}명${vips ? ` · ★ ${vips}명` : ''})` : '';
+  $('#ppl-count').textContent = people.length ? `${people.length}` : '';
   $('#ppl').innerHTML = list.length
     ? list.slice(0, 200).map(p => `<li class="${p.v ? 'on' : ''}">
         <span class="ppl-av">${avatarSVG(p.a)}</span><span class="ppl-n">${esc(p.n)}</span>
-        <button type="button" class="star" data-vip="${p.id}" aria-pressed="${p.v}" title="${p.v ? '크게 보기 끄기' : '크게 보기'}">${p.v ? '★ 크게' : '☆'}</button></li>`).join('')
+        <button type="button" class="star" data-vip="${p.id}" aria-pressed="${p.v}" title="${p.v ? '크게 보기 끄기' : '크게 보기'}">${p.v ? '★ 크게' : '☆ 크게'}</button>
+        <button type="button" class="star spot" data-spot="${p.id}" aria-pressed="${game?.spotlight === p.id}" title="스포트라이트">🔦 ${game?.spotlight === p.id ? '비추는 중' : '비추기'}</button></li>`).join('')
     : `<li class="muted">${q ? '찾는 이름이 없어요' : '아직 참가자가 없습니다'}</li>`;
 }
 $('#ppl-search').addEventListener('input', renderPeople);
@@ -314,4 +354,44 @@ $('#ppl').addEventListener('click', async e => {
   p.v = !p.v; renderPeople();
   try { await rpc('host_set_vip', { p_pin: pin, p_sid: p.id, p_on: p.v }); }
   catch (err) { p.v = !p.v; renderPeople(); msg($('#msg'), err.message, 'err'); }
+});
+
+// ---------- 탭 ----------
+document.querySelectorAll('.tabs .tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.tabs .tab').forEach(x => x.setAttribute('aria-selected', x === t));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('hidden', p.dataset.pane !== t.dataset.tab));
+  try { localStorage.setItem('qs.hosttab', t.dataset.tab); } catch {}
+}));
+try { const t = localStorage.getItem('qs.hosttab'); if (t) document.querySelector(`.tabs .tab[data-tab="${t}"]`)?.click(); } catch {}
+
+// ---------- 화면 설정 (정답 공개 방식 · 대기 화면 문구) ----------
+function syncSettings(g) {
+  document.querySelectorAll('input[name="auto-reveal"]').forEach(r => { r.checked = (r.value === '1') === !!g.auto_reveal; });
+  const t = $('#lobby-title'), sub = $('#lobby-sub');
+  if (document.activeElement !== t && !t.dataset.dirty) t.value = g.lobby_title || '';
+  if (document.activeElement !== sub && !sub.dataset.dirty) sub.value = g.lobby_sub || '';
+  const sp = g.spotlight && people.find(p => p.id === g.spotlight);
+  $('#spot-group').classList.toggle('hidden', !g.spotlight);
+  $('#spot-who').textContent = sp ? sp.n : g.spotlight ? '비추는 중' : '';
+  renderPeople();
+}
+const saveSettings = auto => act(() => rpc('host_set_settings', {
+  p_pin: pin, p_auto_reveal: auto ?? !!game?.auto_reveal,
+  p_lobby_title: $('#lobby-title').value, p_lobby_sub: $('#lobby-sub').value,
+}));
+document.querySelectorAll('input[name="auto-reveal"]').forEach(r => r.addEventListener('change', () => saveSettings(r.value === '1')));
+['lobby-title', 'lobby-sub'].forEach(id => $('#' + id).addEventListener('input', e => { e.target.dataset.dirty = '1'; }));
+$('#lobby-save').addEventListener('click', async () => {
+  await saveSettings();
+  delete $('#lobby-title').dataset.dirty; delete $('#lobby-sub').dataset.dirty;
+  msg($('#msg'), '✔ 대기 화면 문구를 바꿨어요', 'ok');
+});
+
+// ---------- 스포트라이트 ----------
+async function setSpot(id) { await act(() => rpc('host_spotlight', { p_pin: pin, p_sid: id })); }
+$('#spot-off').addEventListener('click', () => setSpot(null));
+$('#ppl').addEventListener('click', e => {
+  const b = e.target.closest('[data-spot]');
+  if (!b) return;
+  setSpot(game?.spotlight === b.dataset.spot ? null : b.dataset.spot);
 });

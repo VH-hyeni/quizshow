@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>진행자</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20261118c">
 </head>
 <body class="host">
   <!-- 로그인 -->
@@ -29,7 +29,8 @@
     </div>
 
     <div class="grid">
-      <div class="card">
+      <!-- ① 지금 진행 -->
+      <section class="card live-card">
         <div class="statusbar">
           <span class="phase" id="phase">-</span>
           <span class="muted" id="qpos"></span>
@@ -39,84 +40,133 @@
         <div class="curq" id="curq"></div>
         <div class="bars" id="bars"></div>
 
-        <button class="btn next" id="next" type="button">-</button>
+        <div class="next-row">
+          <button class="btn ghost prev" id="prev" type="button">◀ 이전</button>
+          <button class="btn next" id="next" type="button">-</button>
+        </div>
         <div class="hint" id="hint"></div>
-        <div class="help">키보드 <code>Space</code> 또는 <code>→</code> 로도 누를 수 있어요. 진행은 이 큰 버튼 하나만 누르면 돼요. 아래 작은 버튼은 순서를 건너뛸 때만 쓰세요.</div>
+        <div class="keys">키보드 <kbd>→</kbd> 다음 · <kbd>←</kbd> 이전 · 진행은 큰 버튼 하나면 충분해요</div>
 
-        <div class="row">
-          <button class="btn ghost sm" data-act="close" type="button">응답 마감</button>
-          <button class="btn ghost sm" data-act="reveal" type="button">정답·결과 공개</button>
-          <button class="btn ghost sm" data-act="leaderboard" type="button">순위 보기</button>
-          <button class="btn ghost sm" data-act="lobby" type="button">대기 화면으로</button>
-          <button class="btn ghost sm" data-act="end" type="button">최종 결과</button>
-          <button class="btn ghost sm" id="chat-toggle" type="button">채팅 끄기</button>
-          <button class="btn ghost sm" id="chat-clear" type="button">채팅 지우기</button>
-          <label class="map-pick">채팅 표시
-            <select id="chat-mode">
-              <option value="panel">오른쪽 채팅창</option>
-              <option value="bubble">캐릭터 말풍선</option>
-            </select>
-          </label>
-          <label class="map-pick">스크린 맵
-            <select id="map-pick">
-              <option value="auto">자동 (문제는 인형의 집, 나머지는 무대)</option>
-              <option value="doll">인형의 집</option>
-              <option value="stage">퀴즈 무대</option>
-            </select>
-          </label>
+        <div class="quick">
+          <div class="qgroup">
+            <span class="qlabel">건너뛰기</span>
+            <button class="btn ghost sm" data-act="close" type="button">응답 마감</button>
+            <button class="btn ghost sm" data-act="reveal" type="button">정답·결과 공개</button>
+            <button class="btn ghost sm" data-act="leaderboard" type="button">순위 보기</button>
+            <button class="btn ghost sm" data-act="lobby" type="button">대기 화면</button>
+            <button class="btn ghost sm" data-act="end" type="button">최종 결과</button>
+          </div>
+          <div class="qgroup">
+            <span class="qlabel">정답 공개</span>
+            <div class="seg" role="radiogroup" aria-label="정답 공개 방식">
+              <label><input type="radio" name="auto-reveal" value="0"><span>수동 (버튼 눌러 공개)</span></label>
+              <label><input type="radio" name="auto-reveal" value="1"><span>자동 (시간 끝나면 바로)</span></label>
+            </div>
+          </div>
+          <div class="qgroup spot-group hidden" id="spot-group">
+            <span class="qlabel">🔦 스포트라이트</span>
+            <span class="spot-who" id="spot-who"></span>
+            <button class="btn ghost sm" id="spot-off" type="button">끄기</button>
+          </div>
         </div>
         <div class="msg" id="msg"></div>
 
         <h2>상위 10명</h2>
         <ol class="lb" id="lb"><li class="muted">아직 점수가 없습니다</li></ol>
+      </section>
 
-        <h2>참가자 · 크게 보일 사람 지정 <span class="muted" id="ppl-count"></span></h2>
-        <div class="help">★를 누른 사람은 스크린의 대기실 · 구경꾼 줄 · 보기 칸에서 크게, 이름은 금색으로 보여요. 사장님, 사회자, 오늘의 주인공에게 써 보세요.</div>
-        <input class="ppl-search" id="ppl-search" placeholder="이름으로 찾기" aria-label="참가자 이름 검색">
-        <ul class="ppl" id="ppl"><li class="muted">아직 참가자가 없습니다</li></ul>
+      <!-- ② 탭: 문항 · 참가자 · 화면 설정 · 초기화 -->
+      <section class="card tab-card">
+        <nav class="tabs" role="tablist">
+          <button class="tab" role="tab" data-tab="q" aria-selected="true">📝 문항</button>
+          <button class="tab" role="tab" data-tab="p">👥 참가자 <span id="ppl-count"></span></button>
+          <button class="tab" role="tab" data-tab="s">🖥 화면 설정</button>
+          <button class="tab" role="tab" data-tab="r">초기화</button>
+        </nav>
 
-        <h2>초기화</h2>
-        <div class="row">
-          <button class="btn danger sm" data-act="reset-scores" type="button">점수만 초기화</button>
-          <button class="btn danger sm" data-act="reset-all" type="button">참가자까지 전체 삭제</button>
+        <div class="pane" data-pane="q">
+          <h2>문항 목록 <span class="muted" id="qcount"></span></h2>
+          <ul class="qlist" id="qlist"><li class="muted">문항을 아래에서 올려 주세요</li></ul>
+
+          <h2>문항 편집</h2>
+          <div class="tpl-row">
+            <span class="muted">틀 추가</span>
+            <button class="btn ghost sm" type="button" data-tpl="quiz">정답 퀴즈</button>
+            <button class="btn ghost sm" type="button" data-tpl="ox">OX 퀴즈</button>
+            <button class="btn ghost sm" type="button" data-tpl="poll">투표</button>
+            <button class="btn ghost sm" type="button" data-tpl="slide">발표(칠판)</button>
+            <button class="btn ghost sm" type="button" data-tpl="order">숫자 순서</button>
+            <button class="btn ghost sm" type="button" data-tpl="reaction">반응속도</button>
+            <button class="btn ghost sm" type="button" data-tpl="tap">광클</button>
+            <label class="btn ghost sm img-btn">🖼 이미지 넣기<input type="file" id="img-pick" accept="image/*" hidden></label>
+          </div>
+          <details class="help">
+            <summary>입력 형식 보기</summary>
+            빈 줄로 문항을 구분해요.<br>
+            <code>Q:</code> 정답 퀴즈 — <code>-</code> 보기, <code>*</code> 정답 보기<br>
+            <code>OX:</code> OX 퀴즈 — 다음 줄에 <code>정답: O</code> 또는 <code>정답: X</code><br>
+            <code>P:</code> 투표(선호도 조사) — 정답 없음<br>
+            <code>S:</code> 발표(칠판) — 다음 줄부터 설명을 한 줄씩, <code>-</code> 로 시작하면 글머리표 · <code>이미지: #1</code> 은 '🖼 이미지 넣기'로 올린 그림<br>
+            <code>G: 숫자순서</code> / <code>G: 반응속도</code> / <code>G: 광클</code> — 미니게임<br>
+            <code>T: 20</code> 제한시간(초) · 광클은 누르는 시간 · <code>크기: 4</code> 숫자순서 판 크기(4 = 1~16)<br>
+            <code>공개: 실시간</code> 고르는 즉시 아바타 이동 · <code>공개: 정답때</code> 정답 공개 때 · <code>공개: 비공개</code> 끝까지 비밀(인원수만)
+          </details>
+          <textarea id="editor" spellcheck="false"></textarea>
+          <div class="row" style="margin-top:10px">
+            <button class="btn secondary" id="upload" type="button">문항 저장</button>
+            <button class="btn ghost" id="load-server" type="button">저장된 문항 불러오기</button>
+            <button class="btn ghost" id="sample" type="button">예시 넣기</button>
+          </div>
+          <div class="msg" id="edit-msg"></div>
         </div>
-      </div>
 
-      <div class="card">
-        <h2>문항 목록 <span class="muted" id="qcount"></span></h2>
-        <ul class="qlist" id="qlist"><li class="muted">문항을 아래에서 올려 주세요</li></ul>
+        <div class="pane hidden" data-pane="p">
+          <div class="help">
+            <b>★ 크게</b> 스크린에서 2배 크기 · 금색 이름 (사장님, 사회자, 주인공에게)<br>
+            <b>🔦 비추기</b> 스크린 주변을 어둡게 하고 그 사람만 노란 조명으로 비춰요. 한 번 더 누르면 꺼져요
+          </div>
+          <input class="ppl-search" id="ppl-search" placeholder="이름으로 찾기" aria-label="참가자 이름 검색">
+          <ul class="ppl" id="ppl"><li class="muted">아직 참가자가 없습니다</li></ul>
+        </div>
 
-        <h2>문항 편집</h2>
-        <div class="tpl-row">
-          <span class="muted">틀 추가</span>
-          <button class="btn ghost sm" type="button" data-tpl="quiz">정답 퀴즈</button>
-          <button class="btn ghost sm" type="button" data-tpl="ox">OX 퀴즈</button>
-          <button class="btn ghost sm" type="button" data-tpl="poll">투표</button>
-          <button class="btn ghost sm" type="button" data-tpl="order">숫자 순서</button>
-          <button class="btn ghost sm" type="button" data-tpl="reaction">반응속도</button>
-          <button class="btn ghost sm" type="button" data-tpl="tap">광클</button>
+        <div class="pane hidden" data-pane="s">
+          <h2>대기 화면 문구</h2>
+          <label class="field"><span>큰 문구</span><input id="lobby-title" maxlength="60" placeholder="QR 찍고 내 캐릭터로 입장!"></label>
+          <label class="field"><span>작은 문구 (선택)</span><input id="lobby-sub" maxlength="80" placeholder="예: 2026 송년회 · 7시에 시작해요"></label>
+          <div class="row"><button class="btn secondary sm" id="lobby-save" type="button">문구 저장</button><span class="muted">줄바꿈은 <code>/</code> 로 넣어요</span></div>
+
+          <h2>채팅</h2>
+          <div class="row">
+            <button class="btn ghost sm" id="chat-toggle" type="button">채팅 끄기</button>
+            <button class="btn ghost sm" id="chat-clear" type="button">채팅 지우기</button>
+            <label class="map-pick">표시
+              <select id="chat-mode">
+                <option value="panel">오른쪽 채팅창</option>
+                <option value="bubble">캐릭터 말풍선</option>
+              </select>
+            </label>
+          </div>
+
+          <h2>스크린 배경</h2>
+          <label class="map-pick">배경색
+            <select id="map-pick">
+              <option value="auto">자동</option>
+              <option value="doll">분홍빛</option>
+              <option value="stage">보랏빛</option>
+            </select>
+          </label>
         </div>
-        <details class="help">
-          <summary>입력 형식 보기</summary>
-          빈 줄로 문항을 구분해요.<br>
-          <code>Q:</code> 정답 퀴즈 — <code>-</code> 보기, <code>*</code> 정답 보기<br>
-          <code>OX:</code> OX 퀴즈 — 다음 줄에 <code>정답: O</code> 또는 <code>정답: X</code><br>
-          <code>P:</code> 투표(선호도 조사) — 정답 없음<br>
-          <code>G: 숫자순서</code> / <code>G: 반응속도</code> / <code>G: 광클</code> — 미니게임<br>
-          <code>T: 20</code> 제한시간(초) · 광클은 누르는 시간 · <code>크기: 4</code> 숫자순서 판 크기(4 = 1~16)<br>
-          <code>공개: 실시간</code> 고르는 즉시 아바타 이동 · <code>공개: 정답때</code> 정답 공개 때 · <code>공개: 비공개</code> 누가 뭘 골랐는지 끝까지 비밀(인원수만)<br>
-          생략하면 퀴즈는 정답때, 투표는 실시간이에요
-        </details>
-        <textarea id="editor" spellcheck="false"></textarea>
-        <div class="row" style="margin-top:10px">
-          <button class="btn secondary" id="upload" type="button">문항 저장</button>
-          <button class="btn ghost" id="load-server" type="button">저장된 문항 불러오기</button>
-          <button class="btn ghost" id="sample" type="button">예시 넣기</button>
+
+        <div class="pane hidden" data-pane="r">
+          <div class="help">행사 전 리허설이 끝나면 <b>참가자까지 전체 삭제</b>로 깨끗하게 시작하세요.</div>
+          <div class="row">
+            <button class="btn danger sm" data-act="reset-scores" type="button">점수만 초기화</button>
+            <button class="btn danger sm" data-act="reset-all" type="button">참가자까지 전체 삭제</button>
+          </div>
         </div>
-        <div class="msg" id="edit-msg"></div>
-      </div>
+      </section>
     </div>
   </div>
-  <script type="module" src="host.js"></script>
+  <script type="module" src="host.js?v=20261118c"></script>
 </body>
 </html>

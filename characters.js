@@ -18,7 +18,7 @@ export const PART_KEYS = ['h', 'hc', 's', 'e', 'f', 'o', 'a'];
 
 // 요즘 유행 프리셋 ㅋ — 갈색 웨이브 장발 + 턱수염 + 퀭한 눈 + 토가 + 천사날개
 export const PRESETS = {
-  밤티: { z: 12, h: 0, f: 0, b: 0 },
+  밤티: { z: 8, c: 0, h: 0, f: 0, b: 0 },
 };
 
 export const HAIR = ['#8A5634', '#3A3040', '#E9B949', '#F28DB2', '#A98BE6', '#5CC9A0', '#6CB4F0', '#D23A4C'];
@@ -580,62 +580,72 @@ function oldAvatarSVG(raw, mood = 'idle', cls = '') {
 }
 
 // =====================================================================
-//  12간지 픽셀 캐릭터 (assets/zodiac) + 소품 (assets/acc)
+//  꼬마 사람 픽셀 캐릭터 (assets/people) + 소품 (assets/acc)
 //  avatar = { z: 띠 0~11 (12 = 밤티), h: 머리 소품, f: 얼굴 소품, b: 탈것·등 }
 // =====================================================================
-export const ZODIAC = ['쥐', '소', '호랑이', '토끼', '용', '뱀', '말', '양', '원숭이', '닭', '개', '돼지', '밤티'];
-export const BAMTI = 12;
+export const PEOPLE = ['핑크 긴머리', '후드 소년', '똥머리 소녀', '안경 반장', '흑발 소녀', '오렌지 꼬마', '민트 세일러', '은발 소년', '밤티', '금발 곱슬', '트레이닝', '포니테일', '하늘 박사', '마법소녀', '정장', '체리 원피스',
+  '웨이브 멜빵', '야구 점퍼', '트랙 포니테일', '노랑 우비', '핑크 후디', '교복', '땋은 은발', '오렌지 가디건', '메이드', '꼬마 마법사', '아이돌', '곰돌이 잠옷', '레몬 원피스', '할아버지', '트렌치코트', '카고 소년'];
+export const ZODIAC = PEOPLE;   // 예전 이름 호환
+export const BAMTI = 8;
+export const HAIR_COLORS = ['기본', '흑발', '갈색', '금발', '핑크', '라벤더', '민트', '하늘', '체리', '은발'];
+export const HAIR_SWATCH = [null, '#2B2230', '#8A5634', '#F2C14E', '#F28DB2', '#A98BE6', '#6FCFB0', '#6CB4F0', '#D23A4C', '#E6E6EE'];
 export const ACC_SLOTS = [
-  ['h', '머리', ['없음', '리본', '왕관', '고깔모자', '꽃관']],
-  ['f', '얼굴', ['없음', '안경', '선글라스']],
-  ['b', '탈것', ['없음', '빨간 자동차', '람보르기니', '포르쉐']],
+  ['h', '머리', ['없음', '리본', '왕관', '고깔모자', '꽃관', '베레모', '비니', '병아리', '고양이귀']],
+  ['f', '얼굴', ['없음', '안경', '선글라스', '하트 안경', '마스크']],
+  ['b', '손', ['없음', '하트 풍선', '응원봉']],
 ];
-const ACC_IMG = { h: [null, 'ribbon', 'crown', 'party', 'flower'], f: [null, 'glasses', 'sun'], b: [null, 'car', 'lambo', 'porsche'] };
-const ACC_RATIO = {"ribbon": 0.803, "glasses": 0.421, "crown": 0.768, "party": 1.34, "flower": 0.525, "sun": 0.385, "car": 0.788, "lambo": 0.653, "porsche": 0.658};   // 소품 그림 높이/너비
-// 소품별 붙이는 법: [기준, 너비(두 눈 사이 거리 배수), 머리에 파묻히는 비율, 옆으로 비킴(눈 사이 거리 배수)]
+const ACC_IMG = {
+  h: [null, 'ribbon', 'crown', 'party', 'flower', 'beret', 'beanie', 'chick', 'catears'],
+  f: [null, 'glasses', 'sun', 'heartglasses', 'mask'],
+  b: [null, 'balloon', 'lightstick'],
+};
+const ACC_RATIO = {"ribbon": 0.803, "glasses": 0.421, "crown": 0.768, "party": 1.34, "flower": 0.525, "sun": 0.385, "car": 0.788, "lambo": 0.653, "porsche": 0.658, "beret": 0.733, "beanie": 1.047, "chick": 0.892, "catears": 0.44, "heartglasses": 0.399, "mask": 0.565, "balloon": 1.616, "lightstick": 1.268};   // 소품 그림 높이/너비
+// 소품별 붙이는 법: [기준, 너비(두 눈 사이 거리 배수), 머리에 파묻히는 비율, 옆으로 비킴]
+//  top = 정수리 · eye = 눈 · mouth = 입 · hand = 손에 들기(옆으로 비킴 = 오른손 +, 왼손 -)
 const ACC_SPEC = {
-  ribbon: ['top', 0.95, 0.32, 0], crown: ['top', 1.05, 0.25, 0], party: ['top', 0.75, 0.15, 0.1], flower: ['top', 1.9, 0.4, 0],
-  glasses: ['eye', 2.15], sun: ['eye', 2.05],
-  car: ['car', 0.7], lambo: ['car', 0.9], porsche: ['car', 0.9],
+  ribbon: ['top', 0.9, 0.55, 0], crown: ['top', 1.05, 0.25, 0], party: ['top', 0.75, 0.15, 0.1], flower: ['top', 1.9, 0.4, 0],
+  beret: ['top', 1.9, 0.5, 0.15], beanie: ['top', 2.0, 0.42, 0], chick: ['top', 0.95, 0.12, 0], catears: ['top', 2.1, 0.62, 0],
+  glasses: ['eye', 1.95], sun: ['eye', 1.9], heartglasses: ['eye', 2.0], mask: ['mouth', 1.45],
+  balloon: ['hand', 1.3, 0, 1.45], lightstick: ['hand', 1.25, 0, -1.45],
 };
 // 띠별 얼굴 위치 [두 눈 가운데 x, 눈 높이 y, 두 눈 사이 거리, 머리 꼭대기 y] (정사각형 그림 대비 비율)
-const FACE = [[0.499, 0.6, 0.269, 0.255], [0.497, 0.552, 0.279, 0.178], [0.477, 0.538, 0.292, 0.212], [0.489, 0.605, 0.259, 0.136], [0.485, 0.521, 0.271, 0.156], [0.473, 0.455, 0.244, 0.252], [0.404, 0.489, 0.254, 0.108], [0.494, 0.567, 0.247, 0.204], [0.498, 0.578, 0.25, 0.201], [0.498, 0.586, 0.26, 0.187], [0.495, 0.578, 0.254, 0.261], [0.497, 0.597, 0.287, 0.289], [0.5, 0.385, 0.1, 0.17]];
-export const zodiacOfYear = y => ((y - 1900) % 12 + 12) % 12;   // 1900년 = 쥐띠
+const FACE = [[0.475, 0.52, 0.23, 0.14], [0.5, 0.51, 0.23, 0.14], [0.472, 0.53, 0.215, 0.16], [0.487, 0.53, 0.205, 0.12], [0.485, 0.51, 0.21, 0.1], [0.49, 0.5, 0.23, 0.09], [0.487, 0.49, 0.205, 0.1], [0.487, 0.48, 0.205, 0.09], [0.482, 0.43, 0.215, 0.08], [0.477, 0.47, 0.185, 0.08], [0.482, 0.44, 0.215, 0.07], [0.415, 0.44, 0.21, 0.09], [0.465, 0.43, 0.25, 0.09], [0.475, 0.41, 0.24, 0.06], [0.482, 0.42, 0.215, 0.05], [0.487, 0.43, 0.205, 0.08], [0.482, 0.43, 0.215, 0.07], [0.482, 0.43, 0.195, 0.08], [0.405, 0.49, 0.19, 0.17], [0.482, 0.45, 0.195, 0.08], [0.482, 0.43, 0.215, 0.07], [0.487, 0.44, 0.205, 0.07], [0.477, 0.44, 0.185, 0.07], [0.482, 0.45, 0.195, 0.07], [0.482, 0.47, 0.215, 0.12], [0.477, 0.5, 0.185, 0.1], [0.472, 0.44, 0.215, 0.07], [0.477, 0.47, 0.205, 0.08], [0.487, 0.4, 0.205, 0.06], [0.487, 0.44, 0.205, 0.07], [0.472, 0.42, 0.215, 0.07], [0.477, 0.44, 0.185, 0.08]];
 
 export function normAvatar(a = {}) {
   const n = (v, mx) => Number.isInteger(v) && v >= 0 && v <= mx ? v : 0;
-  if (a && Number.isInteger(a.z)) return { z: n(a.z, 12), h: n(a.h, 4), f: n(a.f, 2), b: n(a.b, 3) };
+  if (a && Number.isInteger(a.z)) return { z: n(a.z, 31), c: 0, h: n(a.h, 8), f: n(a.f, 4), b: n(a.b, 2) };
   // 예전 캐릭터로 저장된 사람: 늘 같은 띠가 되도록
   const k = JSON.stringify(a || {}).split('').reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) | 0, 7);
-  return { z: Math.abs(k) % 12, h: 0, f: 0, b: 0 };
+  return { z: Math.abs(k) % 32, c: 0, h: 0, f: 0, b: 0 };
 }
 export function randomAvatar() {
   const r = n => Math.floor(Math.random() * n);
-  return { z: r(12), h: Math.random() < 0.5 ? 0 : r(5), f: Math.random() < 0.7 ? 0 : r(3), b: Math.random() < 0.75 ? 0 : 1 + r(3) };
+  return { z: r(32), c: 0, h: Math.random() < 0.5 ? 0 : r(9), f: Math.random() < 0.7 ? 0 : r(5), b: Math.random() < 0.7 ? 0 : r(3) };
 }
 
 const pct = v => `${(v * 100).toFixed(2)}%`;
 function accTag(name, z) {
-  const [kind, wm, sink = 0, side = 0] = ACC_SPEC[name], [ex, ey, g, ht] = FACE[z];
+  let [kind, wm, sink = 0, side = 0] = ACC_SPEC[name];
+  const [ex, ey, g, ht] = FACE[z];
   let w, x, y;
   if (kind === 'car') { w = wm; x = 0.5 - w / 2; y = 1 - w * ACC_RATIO[name]; }
   else {
     w = wm * g;
     const h = w * ACC_RATIO[name];
     if (kind === 'eye') { x = ex - w / 2; y = ey - h / 2; }
+    else if (kind === 'mouth') { x = ex - w / 2; y = ey + g * 0.38; }
+    else if (kind === 'hand') { x = ex + side * g - w / 2; y = ey + g * 1.45 - h; }
     else { x = ex + side * g - w / 2; y = ht - h * (1 - sink); }
   }
-  return `<img class="px-acc acc-${kind}" src="assets/acc/${name}.webp" alt="" draggable="false" style="width:${pct(w)};left:${pct(x)};top:${pct(y)}">`;
+  return `<img class="px-acc acc-${kind}" src="assets/acc/${name}.webp?v=20261118c" alt="" draggable="false" style="width:${pct(w)};left:${pct(x)};top:${pct(y)}">`;
 }
 
 // 캐릭터 그림. 예전처럼 avatarSVG 라는 이름으로 어디서나 씀. 표정(mood)은 CSS 모션·효과로 표현
 export function avatarSVG(raw, mood = 'idle', cls = '') {
   const a = normAvatar(raw);
-  const wear = [ACC_IMG.h[a.h], ACC_IMG.f[a.f]].filter(Boolean).map(n => accTag(n, a.z)).join('');
-  const car = ACC_IMG.b[a.b];
-  // 동물 + 머리·얼굴 소품을 한 상자(rider)에 넣어서, 차에 탈 때는 상자째로 줄이고 올림 → 소품이 같이 따라감
-  const rider = `<span class="px-rider"><img class="px-img" src="assets/zodiac/z${a.z}.webp" alt="" draggable="false" decoding="async">${wear}</span>`;
-  return `<span class="av px ch-${mood}${car ? ' riding ride-' + car : ''} ${cls}" aria-hidden="true">${rider}${car ? accTag(car, a.z) : ''}</span>`;
+  const wear = [ACC_IMG.h[a.h], ACC_IMG.f[a.f], ACC_IMG.b[a.b]].filter(Boolean).map(n => accTag(n, a.z)).join('');
+  const rider = `<span class="px-rider"><img class="px-img" src="assets/people/p${a.z}.webp?v=20261118c" alt="" draggable="false" decoding="async">${wear}</span>`;
+  return `<span class="av px ch-${mood} ${cls}" aria-hidden="true">${rider}</span>`;
 }
 
 // 마스코트 (픽셀)

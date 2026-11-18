@@ -1,6 +1,6 @@
-import { rpc, $, esc, jitter, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE } from './common.js';
-import { GAMES, KIND_LABEL, kindOf, fmtPlay } from './questions-format.js';
-import { avatarSVG, normAvatar, randomAvatar, ZODIAC, ACC_SLOTS, BAMTI, zodiacOfYear } from './characters.js';
+import { rpc, $, esc, jitter, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE } from './common.js?v=20261118c';
+import { GAMES, KIND_LABEL, kindOf, fmtPlay } from './questions-format.js?v=20261118c';
+import { avatarSVG, normAvatar, randomAvatar, PEOPLE, ACC_SLOTS, BAMTI, HAIR_COLORS } from './characters.js?v=20261118c';
 
 if (!configured) { showConfigError(); throw new Error('config.js not set'); }
 
@@ -52,7 +52,6 @@ function renderJoin(force = false) {
       <input id="nick" name="nick" maxlength="20" placeholder="아바타 이름 (최대 20자)" enterkeyhint="done" required aria-label="아바타 이름">
       <div class="err"></div>
       <div class="tabs" id="tabs" role="tablist"></div>
-      <div class="year-row" id="year-row"><input id="year" type="number" inputmode="numeric" min="1920" max="2025" placeholder="태어난 해 (예: 1996)" aria-label="태어난 해"><button class="btn ghost sm" type="button" id="year-go">내 띠 찾기</button></div>
       <div id="pickers"></div>
       <div class="maker-actions">
         <button class="btn ghost" type="button" id="rand">랜덤</button>
@@ -67,13 +66,12 @@ function renderJoin(force = false) {
   input.addEventListener('input', showName);
   showName();
 
-  const TABS = [['z', '띠', ZODIAC], ...ACC_SLOTS];
+  const TABS = [['z', '캐릭터', PEOPLE], ...ACC_SLOTS];
   let tab = 'z';
   const paint = () => {
     $('#pv').innerHTML = avatarSVG(avatar, 'idle', 'sticker');
     $('#tabs').innerHTML = TABS.map(([k, label]) =>
       `<button type="button" class="tab" role="tab" data-tab="${k}" aria-selected="${k === tab}">${label}</button>`).join('');
-    $('#year-row').classList.toggle('hidden', tab !== 'z');
     const list = TABS.find(t => t[0] === tab)[2];
     $('#pickers').innerHTML = `<div class="picks parts">${list.map((n, i) =>
       `<button type="button" class="pick" data-k="${tab}" data-v="${i}" aria-pressed="${avatar[tab] === i}">${avatarSVG({ ...avatar, [tab]: i })}<span>${n}</span></button>`).join('')}</div>`;
@@ -90,14 +88,8 @@ function renderJoin(force = false) {
     avatar = { ...avatar, [b.dataset.k]: Number(b.dataset.v) };
     paint(); wiggle();
   });
-  $('#year-go').addEventListener('click', () => {
-    const y = Number($('#year').value);
-    if (!(y >= 1900 && y <= 2100)) { $('#year').focus(); return; }
-    avatar = { ...avatar, z: zodiacOfYear(y) };
-    paint(); wiggle();
-  });
   $('#bamti').addEventListener('click', () => {
-    avatar = { z: BAMTI, h: 0, f: 0, b: 0 };
+    avatar = { z: BAMTI, c: 0, h: 0, f: 0, b: 0 };
     if (!input.value.trim()) { input.value = '밤티'; showName(); }
     paint(); wiggle();
   });
@@ -116,7 +108,7 @@ function renderJoin(force = false) {
       store.set('qs.nick', name); store.set('qs.lastnick', name); store.set('qs.avatar', JSON.stringify(avatar));
       showMe();
       updateSocial();
-      if (game) render(game);
+      lastKey = null; if (game) render(game);
     } catch (err) {
       form.querySelector('.err').textContent = err.message;
       btn.disabled = false;
@@ -129,16 +121,23 @@ async function rejoin() {
 }
 
 // ---------- 화면 그리기 ----------
+var lastKey = null;
 function render(g) {
+  const prev = game;
   game = g;
-  clearInterval(tick);
   updateSocial();
   if (!nick) return renderJoin();
+  // 진행자가 채팅·맵만 바꾼 경우처럼 진행 단계가 그대로면 화면을 다시 그리지 않음
+  // (100명이 한꺼번에 서버에 다시 물어보는 일을 막고, 고르던 화면도 그대로 유지)
+  const key = `${g.phase}:${g.q_index}:${g.started_at}:${g.correct}:${nick}`;
+  if (prev && key === lastKey) return;
+  lastKey = key;
+  clearInterval(tick);
   const seq = ++renderSeq;
   switch (g.phase) {
     case 'question':
-    case 'closed':      return g.question?.kind === 'game' ? renderGame(g, seq) : renderQuestion(g);
-    case 'reveal':      return g.question?.kind === 'game' ? renderGameResult(g, seq) : renderReveal(g, seq);
+    case 'closed':      return g.question?.kind === 'slide' ? renderSlidePhone(g) : g.question?.kind === 'game' ? renderGame(g, seq) : renderQuestion(g);
+    case 'reveal':      return g.question?.kind === 'slide' ? renderSlidePhone(g) : g.question?.kind === 'game' ? renderGameResult(g, seq) : renderReveal(g, seq);
     case 'leaderboard': return renderRank(g, seq, false);
     case 'end':         return renderRank(g, seq, true);
     default:            return renderLobby(g);
@@ -171,6 +170,17 @@ function metaRow(g, withTimer = false) {
     <span>${g.q_index + 1}번째 문제 (총 ${g.q_total}개)</span>
     ${withTimer ? '<span class="timer"></span>' : ''}
   </div>`;
+}
+
+// 발표 중: 폰은 칠판 제목만 보여 주고 스크린을 보게
+function renderSlidePhone(g) {
+  view.innerHTML = `
+    <div class="center">
+      ${meBig('happy', 'bob')}
+      <div class="slide-chip">📋 발표 중</div>
+      <div class="hero">${esc(g.question.text)}</div>
+      <div class="sub">스크린의 칠판을 봐 주세요</div>
+    </div>`;
 }
 
 function renderQuestion(g) {
@@ -245,7 +255,7 @@ async function renderReveal(g, seq) {
   const q = g.question;
   const local = getPick(g);
   view.innerHTML = `${metaRow(g)}<div class="center">${meBig('wow', 'bob')}<div class="sub">결과를 확인하고 있어요</div></div>`;
-  await jitter(1000);
+  await jitter(1600);   // 100명이 같은 순간에 몰리지 않게 조금씩 나눠서 물어봄
   let st = null;
   try { st = await fetchStatus(); } catch {}
   if (seq !== renderSeq) return;
@@ -281,7 +291,7 @@ async function renderReveal(g, seq) {
 
 async function renderRank(g, seq, final) {
   view.innerHTML = `<div class="center">${meBig('wow', 'bob')}<div class="sub">순위를 집계하고 있어요</div></div>`;
-  await jitter(1000);
+  await jitter(1600);
   let st = null;
   try { st = await fetchStatus(); } catch {}
   if (seq !== renderSeq) return;
@@ -471,6 +481,7 @@ function updateSocial() {
   const chatOn = g ? g.chat_on !== false : true;
   $('#chat-toggle').classList.toggle('hidden', !chatOn);
   if (!chatOn) $('#chat-row').classList.add('hidden');
+  if (typeof syncChatLog === 'function') syncChatLog();
 }
 
 let socialMsgTimer = null;
@@ -510,15 +521,50 @@ $('#social').addEventListener('click', async e => {
 $('#chat-toggle').addEventListener('click', () => {
   const row = $('#chat-row');
   row.classList.toggle('hidden');
+  syncChatLog();
   if (!row.classList.contains('hidden')) $('#chat-in').focus();
 });
+
+// ---------- 다른 사람 채팅 보기 ----------
+// 채팅창을 열었을 때(또는 띠별 수다 중)에만 2.5초마다 새 채팅을 가져와요.
+// 100명이 늘 가져오면 서버가 바빠지니까, 보고 있을 때만 + 새로 온 것만 받아요.
+let feedAfter = null, feedBusy = false;
+const chatOpen = () => !$('#chat-row').classList.contains('hidden') && !$('#social').classList.contains('hidden');
+function syncChatLog() {
+  const open = chatOpen();
+  $('#chat-log').classList.toggle('hidden', !open);
+  document.body.classList.toggle('has-chatlog', open);
+  if (open) pollChat();
+}
+async function pollChat() {
+  if (!chatOpen() || document.hidden || feedBusy) return;
+  feedBusy = true;
+  try {
+    const f = await rpc('get_feed', { p_after: feedAfter ?? 0 });
+    const list = $('#chat-log');
+    if (feedAfter == null || f.epoch !== list._epoch) { list.innerHTML = ''; list._epoch = f.epoch; }
+    f.items.filter(it => it.t === 0).slice(-30).forEach(it => {
+      const li = document.createElement('li');
+      const same = false;
+      li.className = (it.v ? 'vip ' : '') + (same ? 'same' : '');
+      li.innerHTML = `<span class="cl-av">${avatarSVG(it.a)}</span><b></b><span class="cl-t"></span>`;
+      li.querySelector('b').textContent = (it.v ? '★ ' : '') + it.n;
+      li.querySelector('.cl-t').textContent = it.b;
+      list.append(li);
+    });
+    while (list.children.length > 40) list.firstElementChild.remove();
+    if (f.items.length || feedAfter == null) list.scrollTop = list.scrollHeight;
+    feedAfter = f.last;
+  } catch {} finally { feedBusy = false; }
+}
+setInterval(pollChat, 2500);
 $('#chat-row').addEventListener('submit', async e => {
   e.preventDefault();
   const text = $('#chat-in').value.trim();
   if (!text) return;
   try {
     const r = await sendFeed(0, text);
-    if (r === 'ok') { $('#chat-in').value = ''; socialMsg('스크린 채팅창에 올라갔어요!'); }
+    if (r === 'ok') { $('#chat-in').value = ''; socialMsg('스크린 채팅창에 올라갔어요!'); pollChat(); }
     else if (r === 'slow') socialMsg('3초 뒤에 다시 보내 주세요');
     else if (r === 'off') { socialMsg('지금은 채팅이 꺼져 있어요'); $('#chat-row').classList.add('hidden'); }
     else socialMsg('보내지 못했어요');

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>스크린</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20261118c">
 </head>
 <body class="screen">
   <div class="top">
@@ -30,18 +30,27 @@
   <div class="bubble-tray" id="bubble-tray" aria-live="polite"></div>
 
   <!-- 스크린에서 바로 진행하기: 평소엔 거의 안 보이고, 마우스를 올리면 나타나요 -->
+  <!-- 스포트라이트 -->
+  <div class="spotfx" id="spot" aria-hidden="true">
+    <div class="spotfx-beam"></div>
+    <div class="spotfx-solo" id="spot-solo"></div>
+    <div class="spotfx-name" id="spot-name"></div>
+  </div>
+
   <div class="ctrl" id="ctrl">
     <form class="ctrl-ask" id="ctrl-form" autocomplete="off">
       <input id="ctrl-pin" type="password" placeholder="진행자 PIN" aria-label="진행자 PIN">
       <button class="btn sm" type="submit">확인</button>
     </form>
     <div class="ctrl-live">
+      <button class="btn ghost sm" id="ctrl-prev" type="button">◀ 이전</button>
+      <button class="btn sm reveal-btn hidden" id="ctrl-reveal" type="button">정답 공개</button>
       <button class="btn" id="ctrl-next" type="button">다음 ▶</button>
       <button class="btn ghost sm" id="ctrl-lock" type="button" title="이 화면에서 진행 기능 잠그기">잠금</button>
     </div>
     <button class="ctrl-open" id="ctrl-open" type="button">진행</button>
     <div class="ctrl-msg" id="ctrl-msg" role="status"></div>
   </div>
-  <script type="module" src="screen.js"></script>
+  <script type="module" src="screen.js?v=20261118c"></script>
 </body>
 </html>

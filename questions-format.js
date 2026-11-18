@@ -21,6 +21,10 @@
 //   크기: 4                     ← 숫자순서 판 크기 (4 = 4×4 = 1~16)
 //   T: 10                       ← 광클: 누르는 시간(초) / 숫자순서: 제한시간(초)
 //
+//   S: 정답 해설                ← 발표(칠판) 슬라이드: 퀴즈 의도·해설 설명용
+//   설명 내용을 한 줄씩         ← 아무 줄이나 그대로 칠판에 적혀요 (- 로 시작하면 글머리표)
+//   이미지: #3                  ← 진행자 화면 '이미지 넣기'로 올린 그림 (또는 https://… 주소)
+//
 // 빈 줄로 문항을 구분하고, # 으로 시작하는 줄은 메모(무시)입니다.
 
 export const GAMES = {
@@ -29,11 +33,11 @@ export const GAMES = {
   tap:      { name: '광클 대결', words: ['광클', '연타', 'tap'], hint: '시간 안에 최대한 많이 누르세요' },
 };
 
-export const KIND_LABEL = { quiz: '정답 퀴즈', ox: 'OX 퀴즈', poll: '투표', game: '미니게임' };
+export const KIND_LABEL = { quiz: '정답 퀴즈', ox: 'OX 퀴즈', poll: '투표', game: '미니게임', slide: '발표' };
 export const SHOW_LABEL = { live: '실시간 공개', reveal: '정답 때 공개', hidden: '비공개' };
 export const showOf = q => q.show || (q.kind === 'poll' ? 'live' : 'reveal');
 const SHOW_WORDS = { live: ['실시간', '바로', '즉시', 'live'], reveal: ['정답때', '정답', '나중', '공개때', 'reveal'], hidden: ['비공개', '익명', '숨김', 'hidden'] };
-export const kindOf = q => (q.kind === 'game' ? 'game' : q.kind === 'poll' ? 'poll' : q.ox ? 'ox' : 'quiz');
+export const kindOf = q => (q.kind === 'slide' ? 'slide' : q.kind === 'game' ? 'game' : q.kind === 'poll' ? 'poll' : q.ox ? 'ox' : 'quiz');
 
 // 진행자 화면의 "추가" 버튼이 편집기에 넣어 주는 틀
 export const TEMPLATES = {
@@ -43,6 +47,7 @@ export const TEMPLATES = {
   order: `G: 숫자순서\n크기: 4`,
   reaction: `G: 반응속도`,
   tap: `G: 광클\nT: 10`,
+  slide: `S: 해설 제목\n여기에 설명을 한 줄씩 적어요\n- 글머리표도 쓸 수 있어요`,
 };
 
 export const SAMPLE = `# 예시 문항입니다. 자유롭게 고쳐 쓰세요.
@@ -56,6 +61,11 @@ T: 15
 
 OX: 바나나는 나무에서 자란다
 정답: X
+
+S: 정답 해설
+바나나는 나무가 아니라 아주 큰 '풀'에서 자라요
+- 줄기처럼 보이는 건 잎이 겹겹이 말린 것
+- 그래서 바나나는 세계에서 가장 큰 풀!
 
 G: 숫자순서
 크기: 4
@@ -90,6 +100,24 @@ export function parseQuestions(text) {
     const lines = block.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
     if (!lines.length) continue;
     const n = out.length + 1;
+    const sm = lines[0].match(/^S\s*[:：]\s*(.*)$/i);
+    if (sm) {
+      const sl = { kind: 'slide', text: sm[1].trim() || '발표', lines: [] };
+      for (const line of lines.slice(1)) {
+        const im = line.match(/^(이미지|사진|img|image)\s*[:：]\s*(.+)$/i);
+        if (im) {
+          const v = im[2].trim();
+          if (!/^#\d+$/.test(v) && !/^https?:\/\//.test(v) && !/^[\w./-]+\.(png|jpe?g|gif|webp|svg)$/i.test(v))
+            throw new Error(`${n}번 문항: 이미지는 '이미지 넣기' 번호(#1)나 https:// 주소로 적어 주세요.`);
+          sl.image = v;
+        } else {
+          if (sl.lines.length >= 12) throw new Error(`${n}번 문항: 발표 내용은 12줄까지 쓸 수 있어요.`);
+          sl.lines.push(line.slice(0, 120));
+        }
+      }
+      out.push(sl);
+      continue;
+    }
     const q = { kind: null, text: '', options: [] };
     let answer = null, ox = false, size = null, t = null, show = null;
     for (const line of lines) {
@@ -175,6 +203,7 @@ export function parseQuestions(text) {
 
 export function toText(questions) {
   return questions.map(q => {
+    if (q.kind === 'slide') return [`S: ${q.text}`, ...(q.lines || []), ...(q.image ? [`이미지: ${q.image}`] : [])].join('\n');
     if (q.kind === 'game') {
       const g = GAMES[q.game] || GAMES.order;
       const lines = [`G: ${g.words[0]}${q.text && q.text !== g.name ? ' ' + q.text : ''}`];

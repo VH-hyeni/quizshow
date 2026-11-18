@@ -1,8 +1,8 @@
-import { rpc, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE, joinUrl } from './common.js';
-import { GAMES, KIND_LABEL, kindOf, fmtPlay, showOf, SHOW_LABEL } from './questions-format.js';
-import { nextAction, hostActions } from './flow.js';
-import { sound, sfx, bgm } from './sound.js';
-import { avatarSVG, mascotSVG } from './characters.js';
+import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE, joinUrl } from './common.js?v=20261118c';
+import { GAMES, KIND_LABEL, kindOf, fmtPlay, showOf, SHOW_LABEL } from './questions-format.js?v=20261118c';
+import { nextAction, prevAction, revealAction, hostActions } from './flow.js?v=20261118c';
+import { sound, sfx, bgm } from './sound.js?v=20261118c';
+import { avatarSVG, mascotSVG } from './characters.js?v=20261118c';
 
 if (!configured) { showConfigError(); throw new Error('config.js not set'); }
 
@@ -69,8 +69,11 @@ function render(g) {
   setMap(g);
   bubbleMode = g.chat_mode === 'bubble';
   $('#chatpanel').classList.toggle('off', g.chat_on === false || bubbleMode);
-  if (g.phase === 'lobby') return renderLobby();
   updateCtrl();
+  setSpot(g);
+  autoFlow(g);
+  if (g.phase === 'lobby') { setLobbyText(g); return renderLobby(); }
+  if (g.question?.kind === 'slide' && ['question', 'closed', 'reveal'].includes(g.phase)) return renderSlide(g);
   if (['question', 'closed', 'reveal'].includes(g.phase)) return g.question?.kind === 'game' ? renderGameScreen(g) : renderQuestion(g);
   if (g.phase === 'leaderboard' || g.phase === 'end') return renderBoard(g.phase === 'end');
 }
@@ -85,7 +88,7 @@ function setMap(g) {
 function playTransition(g) {
   switch (g.phase) {
     case 'lobby': bgm.play('lobby'); break;
-    case 'question': lastSec = null; timeupPlayed = false; sfx.start(); bgm.play('question'); break;
+    case 'question': lastSec = null; timeupPlayed = false; if (g.question?.kind === 'slide') { bgm.stop(); sfx.start?.(); break; } sfx.start(); bgm.play('question'); break;
     case 'closed': bgm.stop(); if (!timeupPlayed) { timeupPlayed = true; sfx.timeup(); } break;
     case 'reveal': bgm.stop(); sfx.reveal(g.question?.kind === 'quiz'); break;
     case 'leaderboard': bgm.stop(); sfx.drumroll(1.6); break;
@@ -108,8 +111,11 @@ function member(p, mood, delay = 0) {
   if (p.v) d.classList.add('vip');    // 진행자가 지정한 '크게 보일 사람'
   d.dataset.mood = mood;
   d._a = p.a;
+  d._sig = sigOf(p);
   return d;
 }
+// 이름·모습·크게 보기가 바뀌었는지 비교하는 표시
+const sigOf = p => `${p.n}|${p.v ? 1 : 0}|${JSON.stringify(p.a)}`;
 
 function setMood(el, mood) {
   if (el.dataset.mood === mood) return;
@@ -128,35 +134,104 @@ function syncCrowd(box, people, mood, kind = 'card') {
   let k = 0;
   for (const p of people) {
     const el = m.get(p.id);
-    if (el) setMood(el, mood);
+    if (el && el._sig !== sigOf(p)) {
+      // 진행자가 크게 보기를 바꾸거나 이름·모습이 바뀌면 그 자리에서 바로 바꿔 끼움 (등장 모션 없이)
+      const d = member(p, mood, 0); d.classList.add('no-enter'); el.replaceWith(d); m.set(p.id, d);
+    } else if (el) setMood(el, mood);
     else { const d = member(p, mood, Math.min(1.2, k++ * 0.03)); m.set(p.id, d); box.append(d); }
   }
   const cs = getComputedStyle(box);
   const w = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 6;
   const h = box.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 6;
   const v = people.filter(p => p.v).length;
-  box.style.setProperty('--s', `${fitSize(w, h, people.length, v, kind === 'spect' ? h * 0.62 : h * 0.5, kind === 'spect' ? 16 : 18)}px`);
+  box.style.setProperty('--s', `${fitSize(w, h, people.length, v, kind === 'spect' ? h * 0.8 : h * 0.75, kind === 'spect' ? 16 : 18)}px`);
 }
 
 // 상자 안에 모두 들어가는 가장 큰 캐릭터 크기 찾기
 // 한 명 = 너비 0.92칸, 높이 (몸 1 − 이름 겹침 + 이름)칸. 크게 보일 사람은 너비 2배라 2명분 자리 + 그 줄이 더 높아짐
 function fitSize(w, h, n, v, cap, min) {
   for (let s = Math.floor(cap); s > min; s--) {
-    const perRow = Math.max(1, Math.floor(w / (s * 0.92)));
-    const rows = Math.ceil((n + v) / perRow);
-    const need = rows * (s * 0.92 + Math.max(14, s * 0.3) + 2) + (v ? s * 1.0 : 0);   // 이름표는 최소 14px
+    const perRow = Math.max(1, Math.floor(w / (s * 0.66)));
+    const rows = Math.ceil((n + v * 1.6) / perRow);   // 크게 보일 사람은 2.6명분 너비
+    const need = rows * (s * 0.95 + Math.max(14, s * 0.3) + 2) + (v ? s * 1.0 : 0);   // 이름표는 최소 14px
     if (need <= h) return s;
   }
   return min;
 }
 
+// 대기 화면 문구 (진행자가 바꿀 수 있음, / 는 줄바꿈)
+function setLobbyText(g) {
+  const t = $('#lobby-title'), s = $('#lobby-sub');
+  if (!t) return;
+  const lines = s2 => esc(s2).split('/').map(x => x.trim()).filter(Boolean).join('<br>');
+  t.innerHTML = g?.lobby_title ? lines(g.lobby_title) : 'QR 찍고<br>내 캐릭터로 입장!';
+  s.innerHTML = g?.lobby_sub ? lines(g.lobby_sub) : '';
+  s.classList.toggle('hidden', !g?.lobby_sub);
+}
+
+// ---------- 스포트라이트 ----------
+// 진행자가 고른 사람 주변만 밝게(노란 은은한 빛), 나머지는 어둡게. 화면에 그 사람이 없으면 가운데에 크게 불러내요
+let spotId = null, spotTimer = null, spotInfo = null;
+function setSpot(g) {
+  const id = g?.spotlight || null;
+  if (id === spotId) return;
+  spotId = id; spotInfo = null;
+  clearInterval(spotTimer);
+  const box = $('#spot');
+  if (!id) { box.classList.remove('on'); $('#spot-solo').innerHTML = ''; delete $('#spot-solo').dataset.id; return; }
+  rpc('get_spot', { p_sid: id }).then(p => { if (spotId === id) { spotInfo = p; placeSpot(); } }).catch(() => {});
+  sfx.reveal?.(true);
+  placeSpot();
+  spotTimer = setInterval(placeSpot, 300);
+}
+function placeSpot() {
+  const box = $('#spot');
+  if (!spotId) return;
+  const el = findAvatars(spotId).find(e => { const r = e.getBoundingClientRect(); return r.width > 4 && r.bottom > 0 && r.top < innerHeight; });
+  let x, y, sz;
+  if (el) {
+    // 그 자리에서 1.8배로 크게 떠오르게
+    const b = el.getBoundingClientRect();
+    sz = Math.min(innerHeight * 0.32, Math.max(innerHeight * 0.14, b.width * 1.8));
+    x = Math.min(innerWidth - sz * 0.6, Math.max(sz * 0.6, b.left + b.width / 2));
+    y = Math.min(innerHeight - sz * 0.48, Math.max(sz * 0.55 + innerHeight * 0.08, b.top + b.height * 0.45));
+  } else {
+    sz = innerHeight * 0.4; x = innerWidth / 2; y = innerHeight * 0.46;
+  }
+  const solo = $('#spot-solo');
+  if (spotInfo && solo.dataset.id !== spotId) { solo.innerHTML = avatarSVG(spotInfo.a, 'happy'); solo.dataset.id = spotId; }
+  box.style.setProperty('--x', `${x}px`); box.style.setProperty('--y', `${y}px`);
+  box.style.setProperty('--sz', `${sz}px`); box.style.setProperty('--r', `${sz * 0.78}px`);
+  $('#spot-name').textContent = spotInfo ? spotInfo.n : '';
+  box.classList.add('on');
+}
+
+// 스크린에서 진행 권한(PIN)이 있으면: 시간 끝나면 마감, '자동 정답 공개'면 곧바로 공개
+// (진행자 화면을 닫아 둬도 스크린만으로 흘러가게)
+let autoCloseKey = null, autoRevealKey = null;
+function autoFlow(g) {
+  if (!ctrlPin || !g) return;
+  if (g.phase === 'closed' && g.auto_reveal && g.question?.kind !== 'slide' && autoRevealKey !== g.started_at) {
+    autoRevealKey = g.started_at;
+    const key = g.started_at;
+    setTimeout(() => { if (game.phase === 'closed' && game.started_at === key) ctrlA.reveal(); }, 1600);
+  }
+}
+setInterval(() => {
+  const g = game;
+  if (!ctrlPin || !g || g.phase !== 'question' || g.question?.kind === 'slide') return;
+  if (remainingSec(g) === 0 && autoCloseKey !== g.started_at) {
+    autoCloseKey = g.started_at;
+    const key = g.started_at;
+    setTimeout(() => { if (game.phase === 'question' && game.started_at === key) ctrlA.close(); }, 2500);
+  }
+}, 1000);
+
 // ---------- 대기실 ----------
-let shownNames = new Set();
 let lobbyLoaded = false;
 async function renderLobby() {
   if (view !== 'lobby') {
     view = 'lobby';
-    shownNames = new Set();
     lobbyLoaded = false;
     const url = joinUrl();
     stage.innerHTML = `
@@ -166,13 +241,15 @@ async function renderLobby() {
           <div class="url">${esc(url.replace(/^https?:\/\//, ''))}</div>
         </div>
         <div class="lobby-info">
-          <h1>QR 찍고<br>내 캐릭터로 입장!</h1>
+          <h1 id="lobby-title"></h1>
+          <p class="lobby-sub" id="lobby-sub"></p>
           <div class="count"><b id="count">0</b>명 입장</div>
           <div class="guests" id="guests"></div>
         </div>
       </div>`;
     drawQR($('#qr'), url);
   }
+  setLobbyText(game);
   const load = async () => {
     try {
       const info = await rpc('lobby_info');
@@ -181,16 +258,21 @@ async function renderLobby() {
       countEl.textContent = info.players;
       setPeople(info.players);
       const box = $('#guests');
+      const m = box._m || (box._m = new Map());
       const fresh = new Set(info.recent.map(r => r.id));
-      if ([...shownNames].some(id => !fresh.has(id))) { box.innerHTML = ''; shownNames = new Set(); }
+      for (const [id, el] of m) if (!fresh.has(id)) { el.remove(); m.delete(id); }
       let added = 0;
       info.recent.slice().reverse().forEach(r => {
-        if (shownNames.has(r.id)) return;
-        shownNames.add(r.id);
-        box.prepend(member({ id: r.id, a: r.a, n: r.n, v: r.v }, 'idle', lobbyLoaded ? 0 : Math.random() * 0.6));
+        const p = { id: r.id, a: r.a, n: r.n, v: r.v };
+        const el = m.get(r.id);
+        if (el) {
+          if (el._sig !== sigOf(p)) { const d = member(p, 'idle', 0); d.classList.add('no-enter'); el.replaceWith(d); m.set(r.id, d); }
+          return;
+        }
+        const d = member(p, 'idle', lobbyLoaded ? 0 : Math.random() * 0.6);
+        m.set(r.id, d); box.prepend(d);
         added++;
       });
-      while (box.children.length > 40) box.lastElementChild.remove();
       if (lobbyLoaded && added) for (let i = 0; i < Math.min(added, 4); i++) setTimeout(() => sfx.join(), i * 140);
       lobbyLoaded = true;
     } catch {}
@@ -214,6 +296,40 @@ async function drawQR(box, text) {
 }
 
 // ---------- 문항 ----------
+// ---------- 발표 (칠판) ----------
+const mediaCache = new Map();
+function slideImage(src) {
+  if (!src) return Promise.resolve(null);
+  if (!/^#\d+$/.test(src)) return Promise.resolve(/^https?:/.test(src) ? src : `assets/slides/${src}`);
+  if (!mediaCache.has(src)) mediaCache.set(src, rpc('get_media', { p_id: Number(src.slice(1)) }).catch(() => null));
+  return mediaCache.get(src);
+}
+function renderSlide(g) {
+  const q = g.question;
+  const key = `s:${g.q_index}:${g.started_at}`;
+  if (view === key) return;
+  view = key;
+  stage.classList.remove('crowd-mode');
+  const lines = (q.lines || []).map(l => /^[-•·*]\s*/.test(l)
+    ? `<li>${esc(l.replace(/^[-•·*]\s*/, ''))}</li>` : `<p>${esc(l)}</p>`).join('');
+  stage.innerHTML = `
+    <div class="chalk-wrap">
+      <div class="chalkboard ${q.image ? 'has-img' : ''}">
+        <div class="chalk-text">
+          <h1 class="chalk-title">${esc(q.text)}</h1>
+          <div class="chalk-body">${lines.replace(/(<li>.*?<\/li>)+/g, m => `<ul>${m}</ul>`)}</div>
+        </div>
+        ${q.image ? '<figure class="chalk-img"><img id="slide-img" alt=""></figure>' : ''}
+        <div class="chalk-tray"><i></i><i class="p"></i><i class="y"></i><b></b></div>
+      </div>
+    </div>`;
+  if (q.image) slideImage(q.image).then(src => {
+    const im = $('#slide-img');
+    if (!im || view !== key) return;
+    if (src) im.src = src; else im.closest('figure').remove();
+  });
+}
+
 function renderQuestion(g) {
   const q = g.question;
   const key = `q:${g.q_index}:${g.started_at}`;
@@ -513,7 +629,7 @@ let ctrlBusy = false;
 const ctrlA = hostActions(() => ctrlPin, async fn => {
   if (ctrlBusy) return;
   ctrlBusy = true; updateCtrl();
-  try { await fn(); } catch (err) { $('#ctrl-msg').textContent = err.message; }
+  try { await fn(); refreshGame(); } catch (err) { $('#ctrl-msg').textContent = err.message; }
   finally { ctrlBusy = false; updateCtrl(); }
 });
 
@@ -522,12 +638,16 @@ function updateCtrl() {
   if (!box) return;
   box.classList.toggle('unlocked', !!ctrlPin);
   if (!ctrlPin) return;
-  const n = nextAction(game, ctrlA);
+  const n = nextAction(game, ctrlA), p = prevAction(game, ctrlA), r = revealAction(game, ctrlA);
   const b = $('#ctrl-next');
   b.textContent = `${n.label} ▶`;
   b.disabled = ctrlBusy || !n.run;
+  $('#ctrl-prev').textContent = p.label;
+  $('#ctrl-prev').disabled = ctrlBusy || !p.run;
+  $('#ctrl-reveal').classList.toggle('hidden', !r || (game?.phase === 'closed' && n.run && /공개|결과/.test(n.label)));
+  if (r) $('#ctrl-reveal').textContent = r.label;
+  $('#ctrl-reveal').disabled = ctrlBusy;
 }
-
 $('#ctrl-open').addEventListener('click', () => {
   if (ctrlPin) return;
   $('#ctrl').classList.toggle('asking');
@@ -547,6 +667,8 @@ $('#ctrl-form').addEventListener('submit', async e => {
   } catch (err) { $('#ctrl-msg').textContent = err.message; }
 });
 $('#ctrl-next').addEventListener('click', () => nextAction(game, ctrlA).run?.());
+$('#ctrl-prev').addEventListener('click', () => prevAction(game, ctrlA).run?.());
+$('#ctrl-reveal').addEventListener('click', () => revealAction(game, ctrlA)?.run?.());
 $('#ctrl-lock').addEventListener('click', () => {
   ctrlPin = null;
   try { localStorage.removeItem('qs.screenpin'); } catch {}
@@ -554,7 +676,8 @@ $('#ctrl-lock').addEventListener('click', () => {
 });
 document.addEventListener('keydown', e => {
   if (!ctrlPin || document.activeElement?.tagName === 'INPUT') return;
-  if (e.code === 'Space' || e.key === 'ArrowRight') { e.preventDefault(); nextAction(game, ctrlA).run?.(); }
+  if (e.code === 'Space' || e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); nextAction(game, ctrlA).run?.(); }
+  if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); prevAction(game, ctrlA).run?.(); }
 });
 if (ctrlPin) rpc('host_check', { p_pin: ctrlPin }).catch(() => { ctrlPin = null; try { localStorage.removeItem('qs.screenpin'); } catch {} updateCtrl(); });
 
