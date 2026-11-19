@@ -31,6 +31,8 @@ alter table public.game add column if not exists map text not null default 'auto
 alter table public.game add column if not exists auto_reveal boolean not null default false;  -- 시간 끝나면 정답까지 자동 공개
 alter table public.game add column if not exists lobby_title text;                            -- 대기 화면 큰 문구 (비우면 기본 문구)
 alter table public.game add column if not exists lobby_sub   text;                            -- 대기 화면 작은 문구
+alter table public.game add column if not exists show_qr     boolean not null default false;  -- 진행 중에 입장 QR 팝업 띄우기
+alter table public.game add column if not exists kick_epoch  int not null default 0;          -- 누가 내보내질 때마다 +1 (폰이 자기 상태를 한 번 확인)
 alter table public.game add column if not exists spotlight   text;                            -- 스포트라이트 받는 참가자(짧은 id), 없으면 null
 alter table public.game add column if not exists chat_mode text not null default 'panel';  -- 채팅 표시: panel(오른쪽 채팅창) | bubble(캐릭터 머리 위 말풍선)         -- 스크린 맵: auto(자동) | doll(인형의 집) | stage(퀴즈 무대)
 
@@ -57,6 +59,16 @@ create table if not exists public.media (
   created_at  timestamptz not null default now()
 );
 alter table public.media enable row level security;
+alter table public.media add column if not exists thumb text;     -- 갤러리용 작은 그림
+alter table public.media add column if not exists name  text;     -- 올린 파일 이름
+
+-- 진행자가 내보낸 참가자 (같은 폰으로는 다시 못 들어옴. 전체 초기화하면 풀림)
+create table if not exists public.banned (
+  id          uuid primary key,
+  created_at  timestamptz not null default now()
+);
+alter table public.banned enable row level security;
+revoke all on public.banned from anon, authenticated;
 
 create table if not exists public.votes (
   player_id   uuid not null references public.players(id) on delete cascade,
@@ -183,6 +195,9 @@ begin
   if char_length(p_nickname) = 0 or char_length(p_nickname) > 20 then
     raise exception '닉네임은 1~20자로 입력해 주세요.';
   end if;
+  if exists (select 1 from banned where id = p_id) then
+    raise exception 'KICKED';
+  end if;
   if not exists (select 1 from players where id = p_id)
      and (select count(*) from players) >= 500 then
     raise exception '참가 인원이 가득 찼습니다.';
@@ -219,7 +234,9 @@ end $$;
 -- 내 상태: 점수, 순위, 현재 문항에서 고른 번호
 create or replace function public.my_status(p_id uuid)
 returns jsonb language sql stable security definer set search_path = public as $$
-  with ranked as (
+  select jsonb_build_object('kicked', true) from banned where id = p_id
+  union all
+  (with ranked as (
     select id, nickname, score, correct_cnt, rank() over (order by score desc) as rnk
     from scores
   )
@@ -239,7 +256,8 @@ returns jsonb language sql stable security definer set search_path = public as $
                             and (case when g.question ->> 'game' = 'tap' then o.value > me.value else o.value < me.value end)) end
                         from game g left join plays me on me.player_id = p_id and me.q_index = g.q_index
                         where g.id = 1))
-  from ranked r where r.id = p_id
+  from ranked r where r.id = p_id)
+  limit 1
 $$;
 
 -- 미니게임 기록 제출. 반환값: ok | already | closed | timeout | invalid | unknown_player
@@ -431,7 +449,7 @@ create or replace function public.host_set_map(p_pin text, p_map text)
 returns void language plpgsql security definer set search_path = public as $$
 begin
   perform _check_pin(p_pin);
-  if p_map not in ('auto', 'doll', 'stage') then raise exception '알 수 없는 맵: %', p_map; end if;
+  if p_map not in ('auto', 'night', 'purple', 'wine', 'forest', 'ocean', 'doll', 'stage') then raise exception '알 수 없는 맵: %', p_map; end if;
   update game set map = p_map, updated_at = now() where id = 1;
 end $$;
 
@@ -541,7 +559,8 @@ begin
     q_index    = p_index,
     question   = case when kind = 'slide' then
                    jsonb_build_object('text', q -> 'text', 'kind', 'slide', 'options', '[]'::jsonb,
-                                      'lines', coalesce(q -> 'lines', '[]'::jsonb), 'image', q -> 'image', 'time_limit', 0)
+                                      'lines', coalesce(q -> 'lines', '[]'::jsonb), 'image', q -> 'image',
+                                      'full', coalesce(q -> 'full', 'false'::jsonb), 'time_limit', 0)
                  when kind = 'game' then
                    -- 미니게임: 3초 카운트다운 후 시작. seed 로 모두 같은 배치, delay 로 반응속도 신호 시각 결정
                    jsonb_build_object(
@@ -620,9 +639,31 @@ begin
   delete from plays where true;
   delete from feed where true;
   delete from results where true;
-  if not p_keep_players then delete from players where true; end if;
+  if not p_keep_players then delete from players where true; delete from banned where true; end if;
   update game set phase = 'lobby', q_index = -1, question = null, correct = null,
-                  started_at = null, chat_epoch = chat_epoch + 1, spotlight = null, updated_at = now() where id = 1;
+                  started_at = null, chat_epoch = chat_epoch + 1, spotlight = null, show_qr = false, updated_at = now() where id = 1;
+end $$;
+
+-- ---------- 입장 QR 팝업 ----------
+create or replace function public.host_set_qr(p_pin text, p_on boolean)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  perform _check_pin(p_pin);
+  update game set show_qr = coalesce(p_on, false), updated_at = now() where id = 1;
+end $$;
+
+-- ---------- 내보내기(강퇴) ----------
+create or replace function public.host_kick(p_pin text, p_sid text)
+returns int language plpgsql security definer set search_path = public as $$
+declare n int;
+begin
+  perform _check_pin(p_pin);
+  insert into banned (id) select id from players where left(id::text, 8) = p_sid on conflict do nothing;
+  delete from players where left(id::text, 8) = p_sid;      -- 표·기록·채팅도 함께 지워짐
+  get diagnostics n = row_count;
+  update game set spotlight = null where id = 1 and spotlight = p_sid;
+  update game set kick_epoch = kick_epoch + 1, updated_at = now() where id = 1;   -- 스크린·폰이 바로 알아차리게
+  return n;
 end $$;
 
 -- ---------- 화면 설정 · 스포트라이트 ----------
@@ -653,15 +694,34 @@ returns jsonb language sql stable security definer set search_path = public as $
 $$;
 
 -- ---------- 발표 이미지 ----------
-create or replace function public.host_put_media(p_pin text, p_data text)
+drop function if exists public.host_put_media(text, text);
+create or replace function public.host_put_media(p_pin text, p_data text, p_thumb text default null, p_name text default null)
 returns int language plpgsql security definer set search_path = public as $$
 declare v int;
 begin
   perform _check_pin(p_pin);
   if p_data !~ '^data:image/(webp|png|jpeg|gif);base64,' then raise exception '이미지 파일만 올릴 수 있어요.'; end if;
   if length(p_data) > 2000000 then raise exception '이미지가 너무 커요. (최대 약 1.5MB)'; end if;
-  insert into media (data) values (p_data) returning id into v;
+  if p_thumb is not null and (p_thumb !~ '^data:image/(webp|png|jpeg);base64,' or length(p_thumb) > 120000) then p_thumb := null; end if;
+  insert into media (data, thumb, name) values (p_data, p_thumb, left(p_name, 80)) returning id into v;
   return v;
+end $$;
+
+-- 갤러리: 올린 이미지 목록 (작은 그림만)
+create or replace function public.host_list_media(p_pin text)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  perform _check_pin(p_pin);
+  return coalesce((select jsonb_agg(jsonb_build_object('id', id, 'thumb', thumb, 'name', name,
+                                                       'kb', length(data) * 3 / 4 / 1024, 'at', created_at) order by id desc)
+                   from media), '[]'::jsonb);
+end $$;
+
+create or replace function public.host_delete_media(p_pin text, p_id int)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  perform _check_pin(p_pin);
+  delete from media where id = p_id;
 end $$;
 
 create or replace function public.get_media(p_id int)
@@ -771,7 +831,11 @@ grant execute on function
   public.host_reveal(text),
   public.host_set_phase(text, text),
   public.host_reset(text, boolean),
-  public.host_put_media(text, text),
+  public.host_put_media(text, text, text, text),
+  public.host_list_media(text),
+  public.host_delete_media(text, int),
+  public.host_kick(text, text),
+  public.host_set_qr(text, boolean),
   public.get_media(int),
   public.host_goto(text, int),
   public.host_set_settings(text, boolean, text, text),

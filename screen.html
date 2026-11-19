@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>스크린</title>
-  <link rel="stylesheet" href="style.css?v=20261118c">
+  <link rel="stylesheet" href="style.css?v=20261119b">
 </head>
 <body class="screen">
   <div class="top">
@@ -30,6 +30,18 @@
   <div class="bubble-tray" id="bubble-tray" aria-live="polite"></div>
 
   <!-- 스크린에서 바로 진행하기: 평소엔 거의 안 보이고, 마우스를 올리면 나타나요 -->
+  <!-- 진행 중 입장 QR 팝업 (진행자 화면 버튼 또는 키보드 Q) -->
+  <div class="qrpop hidden" id="qrpop" role="dialog" aria-label="입장 QR 코드">
+    <div class="qrpop-card">
+      <div class="qrpop-qr" id="qrpop-qr"></div>
+      <div class="qrpop-text">
+        <h2>지금 들어와도 돼요!</h2>
+        <p>휴대폰 카메라로 QR을 찍으면<br>바로 내 캐릭터를 만들고 입장해요.</p>
+        <div class="qrpop-url" id="qrpop-url"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- 스포트라이트 -->
   <div class="spotfx" id="spot" aria-hidden="true">
     <div class="spotfx-beam"></div>
@@ -51,6 +63,6 @@
     <button class="ctrl-open" id="ctrl-open" type="button">진행</button>
     <div class="ctrl-msg" id="ctrl-msg" role="status"></div>
   </div>
-  <script type="module" src="screen.js?v=20261118c"></script>
+  <script type="module" src="screen.js?v=20261119b"></script>
 </body>
 </html>

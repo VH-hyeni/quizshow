@@ -1,7 +1,7 @@
-import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, LABELS, TITLE, joinUrl } from './common.js?v=20261118c';
-import { parseQuestions, toText, SAMPLE, TEMPLATES, KIND_LABEL, kindOf, GAMES, fmtPlay, showOf, SHOW_LABEL } from './questions-format.js?v=20261118c';
-import { nextAction as flowNext, prevAction, hostActions, PHASE_NAME } from './flow.js?v=20261118c';
-import { avatarSVG } from './characters.js?v=20261118c';
+import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, LABELS, TITLE, joinUrl } from './common.js?v=20261119b';
+import { parseQuestions, toText, SAMPLE, TEMPLATES, KIND_LABEL, kindOf, GAMES, fmtPlay, showOf, SHOW_LABEL } from './questions-format.js?v=20261119b';
+import { nextAction as flowNext, prevAction, hostActions, PHASE_NAME } from './flow.js?v=20261119b';
+import { avatarSVG } from './characters.js?v=20261119b';
 
 if (!configured) { showConfigError(); throw new Error('config.js not set'); }
 
@@ -44,6 +44,7 @@ function start(qs) {
   if (started) return;
   started = true;
   questions = qs || [];
+  loadGallery();
   $('#login').classList.add('hidden');
   $('#app').classList.remove('hidden');
   $('#link-screen').href = new URL('screen.html', location.href).href;
@@ -112,7 +113,7 @@ function renderQList() {
     <li class="${game && game.q_index === i ? 'cur' : ''}">
       <span class="num">${i + 1}</span>
       <span class="t" title="${esc(q.text)}">${esc(q.text)}</span>
-      <span class="tag k-${kindOf(q)}">${KIND_LABEL[kindOf(q)]}${kindOf(q) === 'quiz' ? ` · 정답 ${LABELS[q.answer]}` : kindOf(q) === 'ox' ? ` · ${q.answer === 0 ? 'O' : 'X'}` : ''}</span>
+      <span class="tag k-${kindOf(q)}">${q.full ? "장표" : KIND_LABEL[kindOf(q)]}${kindOf(q) === 'quiz' ? ` · 정답 ${LABELS[q.answer]}` : kindOf(q) === 'ox' ? ` · ${q.answer === 0 ? 'O' : 'X'}` : ''}</span>
       ${q.kind !== 'game' && q.kind !== 'slide' ? `<span class="tag k-show">${SHOW_LABEL[showOf(q)]}</span>` : ''}${q.image ? '<span class="tag k-show">🖼</span>' : ''}
       <button class="btn ghost sm" type="button" data-start="${i}">시작</button>
     </li>`).join('');
@@ -179,29 +180,163 @@ function updateControls() {
 $('#next').addEventListener('click', () => nextAction().run?.());
 $('#prev').addEventListener('click', () => prevAction(game, A).run?.());
 
-// 발표 슬라이드용 이미지 올리기: 긴 쪽 1600px 이하로 줄여서 저장 → 편집기에 '이미지: #번호' 넣기
+// ---------- 이미지 올리기 · 갤러리 · PPT 장표 ----------
+// 그림을 긴 쪽 maxSide 이하로 줄여 data URL 로 (webp, 안 되면 jpeg). 너무 크면 품질을 낮춰 다시
+function toDataUrl(src, maxSide, q = 0.85) {
+  const k = Math.min(1, maxSide / Math.max(src.width, src.height));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(src.width * k)); c.height = Math.max(1, Math.round(src.height * k));
+  const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+  x.drawImage(src, 0, 0, c.width, c.height);
+  let d = c.toDataURL('image/webp', q);
+  if (!d.startsWith('data:image/webp')) d = c.toDataURL('image/jpeg', q);
+  return d;
+}
+async function putImage(src, name, maxSide = 1600) {
+  let data = toDataUrl(src, maxSide);
+  for (const q of [0.75, 0.6, 0.5]) if (data.length > 1900000) data = toDataUrl(src, maxSide, q);
+  if (data.length > 1900000) data = toDataUrl(src, Math.round(maxSide * 0.7), 0.6);
+  const thumb = toDataUrl(src, 320, 0.7);
+  return rpc('host_put_media', { p_pin: pin, p_data: data, p_thumb: thumb, p_name: name });
+}
+// PDF(파워포인트에서 PDF로 내보낸 것) → 장마다 그림
+let pdfLib = null;
+async function pdfPages(file, onPage) {
+  if (!pdfLib) {
+    pdfLib = await import('./assets/vendor/pdf.min.mjs');
+    pdfLib.GlobalWorkerOptions.workerSrc = new URL('./assets/vendor/pdf.worker.min.mjs', location.href).href;
+  }
+  const doc = await pdfLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  if (doc.numPages > 60) throw new Error('PDF가 60장을 넘어요. 필요한 장표만 PDF로 다시 저장해 주세요.');
+  for (let i = 1; i <= doc.numPages; i++) {
+    const page = await doc.getPage(i);
+    const v0 = page.getViewport({ scale: 1 });
+    const vp = page.getViewport({ scale: 1920 / Math.max(v0.width, v0.height) });
+    const c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+    const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+    await page.render({ canvasContext: x, viewport: vp }).promise;
+    await onPage(c, i, doc.numPages);
+  }
+}
+// 편집기 끝(또는 커서 자리)에 글 넣기
+function insertEditor(text, atEnd = false) {
+  const ed = $('#editor');
+  const pos = atEnd ? ed.value.length : (ed.selectionStart ?? ed.value.length);
+  const before = ed.value.slice(0, pos);
+  const pre = !before ? '' : before.endsWith('\n\n') ? '' : before.endsWith('\n') ? (atEnd ? '\n' : '') : (atEnd ? '\n\n' : '\n');
+  ed.value = before + pre + text + ed.value.slice(pos);
+  store.set('qs.editor', ed.value);
+}
+const deckBlock = (id, n) => `S: 장표 ${n}\n장표: #${id}\n`;
+
+// 장표 올리기 (PDF 여러 장 또는 그림 여러 장) → 문항 끝에 장표 발표로 추가
+async function uploadDeck(files, out) {
+  const ids = [];
+  try {
+    for (const f of files) {
+      if (/pdf$/i.test(f.type) || /\.pdf$/i.test(f.name)) {
+        await pdfPages(f, async (c, i, n) => {
+          msg(out, `PDF 장표 변환 중… ${i} / ${n}`, 'ok');
+          ids.push(await putImage(c, `${f.name} · ${i}쪽`, 1920));
+        });
+      } else {
+        msg(out, `장표 올리는 중… ${ids.length + 1}`, 'ok');
+        ids.push(await putImage(await createImageBitmap(f), f.name, 1920));
+      }
+    }
+    const start = questions.filter(q => q.full).length;
+    insertEditor(ids.map((id, i) => deckBlock(id, start + i + 1)).join('\n'), true);
+    msg(out, `✔ 장표 ${ids.length}장을 문항 끝에 추가했어요. 문항 탭에서 "문항 저장"을 눌러 주세요.`, 'ok');
+    loadGallery();
+  } catch (err) { msg(out, (ids.length ? `${ids.length}장까지 올렸어요. ` : '') + err.message, 'err'); }
+}
+$('#deck-pick').addEventListener('change', e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) uploadDeck(f, $('#edit-msg')); });
+$('#gal-deck').addEventListener('change', e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) uploadDeck(f, $('#gal-msg')); });
+
+// 칠판용 이미지 한 장 → 커서 자리에 '이미지: #번호'
 $('#img-pick').addEventListener('change', async e => {
   const f = e.target.files?.[0];
   e.target.value = '';
   if (!f) return;
   try {
     msg($('#edit-msg'), '이미지를 올리는 중…', 'ok');
-    const bmp = await createImageBitmap(f);
-    const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
-    const c = document.createElement('canvas');
-    c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
-    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
-    let data = c.toDataURL('image/webp', 0.85);
-    if (!data.startsWith('data:image/webp')) data = c.toDataURL('image/jpeg', 0.85);
-    const id = await rpc('host_put_media', { p_pin: pin, p_data: data });
-    const ed = $('#editor');
-    const pos = ed.selectionStart ?? ed.value.length;
-    const ins = `${pos && ed.value[pos - 1] !== '\n' ? '\n' : ''}이미지: #${id}\n`;
-    ed.value = ed.value.slice(0, pos) + ins + ed.value.slice(pos);
-    store.set('qs.editor', ed.value);
+    const id = await putImage(await createImageBitmap(f), f.name);
+    insertEditor(`이미지: #${id}\n`);
     msg($('#edit-msg'), `✔ 이미지 #${id} 를 넣었어요. 발표(S:) 문항 안에 '이미지: #${id}' 줄이 있으면 칠판에 함께 나와요. "문항 저장"을 눌러 주세요.`, 'ok');
+    loadGallery();
   } catch (err) { msg($('#edit-msg'), err.message, 'err'); }
 });
+// 갤러리에서 여러 장 올리기 (문항에는 안 넣고 보관만)
+$('#gal-pick').addEventListener('change', async e => {
+  const files = [...e.target.files]; e.target.value = '';
+  try {
+    for (let i = 0; i < files.length; i++) {
+      msg($('#gal-msg'), `올리는 중… ${i + 1} / ${files.length}`, 'ok');
+      await putImage(await createImageBitmap(files[i]), files[i].name);
+    }
+    msg($('#gal-msg'), `✔ ${files.length}장을 올렸어요. 아래에서 칠판이나 장표로 넣을 수 있어요.`, 'ok');
+    loadGallery();
+  } catch (err) { msg($('#gal-msg'), err.message, 'err'); }
+});
+
+// 갤러리 목록
+let media = [];
+const usedIn = id => questions.map((q, i) => (q.image === `#${id}` ? i + 1 : 0)).filter(Boolean);
+async function loadGallery() {
+  if (!pin) return;
+  try { media = await rpc('host_list_media', { p_pin: pin }) || []; } catch (err) { msg($('#gal-msg'), err.message, 'err'); return; }
+  renderGallery();
+}
+function renderGallery() {
+  $('#gal-count').textContent = media.length ? `${media.length}장` : '';
+  $('#media-count').textContent = media.length || '';
+  $('#gallery').innerHTML = media.length ? media.map(m => {
+    const used = usedIn(m.id);
+    return `<li class="gal-item" data-id="${m.id}">
+      <button class="gal-thumb" type="button" data-act="view" title="크게 보기">
+        ${m.thumb ? `<img src="${m.thumb}" alt="" loading="lazy">` : '<span class="gal-nothumb">미리보기 없음<br>(눌러서 보기)</span>'}
+        <span class="gal-id">#${m.id}</span>
+      </button>
+      <div class="gal-meta"><span class="gal-name" title="${esc(m.name || '')}">${esc(m.name || '이름 없음')}</span>
+        <span class="muted">${m.kb}KB${used.length ? ` · ${used.join(', ')}번 문항에 사용 중` : ''}</span></div>
+      <div class="gal-btns">
+        <button class="btn ghost sm" type="button" data-act="board">칠판에 넣기</button>
+        <button class="btn ghost sm" type="button" data-act="deck">장표로 넣기</button>
+        <button class="btn ghost sm gal-del" type="button" data-act="del" aria-label="삭제">삭제</button>
+      </div>
+    </li>`;
+  }).join('') : '<li class="muted">아직 올린 이미지가 없어요. 위 버튼으로 올려 보세요.</li>';
+}
+const fullCache = new Map();
+function fullImage(id) {
+  if (!fullCache.has(id)) fullCache.set(id, rpc('get_media', { p_id: id }));
+  return fullCache.get(id);
+}
+$('#gallery').addEventListener('click', async e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const id = Number(b.closest('.gal-item').dataset.id);
+  const m = media.find(x => x.id === id);
+  if (b.dataset.act === 'view') {
+    $('#lb-img').removeAttribute('src'); $('#lb-cap').textContent = `#${id} · 불러오는 중…`;
+    $('#lightbox').classList.remove('hidden');
+    try { $('#lb-img').src = await fullImage(id); $('#lb-cap').textContent = `#${id} · ${m?.name || ''}`; }
+    catch (err) { $('#lb-cap').textContent = err.message; }
+  } else if (b.dataset.act === 'board') {
+    insertEditor(`S: ${m?.name?.replace(/\.[a-z]+$/i, '') || '설명'}\n이미지: #${id}\n`, true);
+    msg($('#gal-msg'), `✔ 칠판 발표로 문항 끝에 추가했어요. 문항 탭에서 글을 다듬고 "문항 저장"을 눌러 주세요.`, 'ok');
+  } else if (b.dataset.act === 'deck') {
+    insertEditor(deckBlock(id, questions.filter(q => q.full).length + 1), true);
+    msg($('#gal-msg'), `✔ 장표로 문항 끝에 추가했어요. 문항 탭에서 "문항 저장"을 눌러 주세요.`, 'ok');
+  } else if (b.dataset.act === 'del') {
+    const used = usedIn(id);
+    if (!confirm(`#${id} 이미지를 지울까요?${used.length ? `\n${used.join(', ')}번 문항에서 쓰고 있어서 그 문항엔 그림이 안 나와요.` : ''}`)) return;
+    try { await rpc('host_delete_media', { p_pin: pin, p_id: id }); media = media.filter(x => x.id !== id); renderGallery(); }
+    catch (err) { msg($('#gal-msg'), err.message, 'err'); }
+  }
+});
+$('#gal-refresh').addEventListener('click', loadGallery);
+$('#lightbox').addEventListener('click', () => $('#lightbox').classList.add('hidden'));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#lightbox').classList.add('hidden'); });
 
 // 채팅 지우기 (스크린 채팅창도 비워짐). 채팅은 이 버튼이나 초기화 전까지 계속 남아요
 $('#chat-clear').addEventListener('click', () => {
@@ -342,11 +477,24 @@ function renderPeople() {
     ? list.slice(0, 200).map(p => `<li class="${p.v ? 'on' : ''}">
         <span class="ppl-av">${avatarSVG(p.a)}</span><span class="ppl-n">${esc(p.n)}</span>
         <button type="button" class="star" data-vip="${p.id}" aria-pressed="${p.v}" title="${p.v ? '크게 보기 끄기' : '크게 보기'}">${p.v ? '★ 크게' : '☆ 크게'}</button>
-        <button type="button" class="star spot" data-spot="${p.id}" aria-pressed="${game?.spotlight === p.id}" title="스포트라이트">🔦 ${game?.spotlight === p.id ? '비추는 중' : '비추기'}</button></li>`).join('')
+        <button type="button" class="star spot" data-spot="${p.id}" aria-pressed="${game?.spotlight === p.id}" title="스포트라이트">🔦 ${game?.spotlight === p.id ? '비추는 중' : '비추기'}</button>
+        <button type="button" class="star kick" data-kick="${p.id}" title="이 참가자 내보내기">내보내기</button></li>`).join('')
     : `<li class="muted">${q ? '찾는 이름이 없어요' : '아직 참가자가 없습니다'}</li>`;
 }
 $('#ppl-search').addEventListener('input', renderPeople);
 $('#ppl').addEventListener('click', async e => {
+  const k = e.target.closest('[data-kick]');
+  if (k) {
+    const p = people.find(x => x.id === k.dataset.kick);
+    if (!p || !confirm(`'${p.n}' 님을 내보낼까요?\n표·점수·채팅이 지워지고, 같은 폰으로는 다시 들어올 수 없어요.\n(전체 초기화하면 다시 들어올 수 있어요)`)) return;
+    k.disabled = true;
+    try {
+      await rpc('host_kick', { p_pin: pin, p_sid: p.id });
+      people = people.filter(x => x !== p); renderPeople();
+      msg($('#msg'), `${p.n} 님을 내보냈어요`, 'ok');
+    } catch (err) { k.disabled = false; msg($('#msg'), err.message, 'err'); }
+    return;
+  }
   const b = e.target.closest('[data-vip]');
   if (!b) return;
   const p = people.find(x => x.id === b.dataset.vip);
@@ -361,11 +509,13 @@ document.querySelectorAll('.tabs .tab').forEach(t => t.addEventListener('click',
   document.querySelectorAll('.tabs .tab').forEach(x => x.setAttribute('aria-selected', x === t));
   document.querySelectorAll('.pane').forEach(p => p.classList.toggle('hidden', p.dataset.pane !== t.dataset.tab));
   try { localStorage.setItem('qs.hosttab', t.dataset.tab); } catch {}
+  if (t.dataset.tab === 'm') loadGallery();
 }));
 try { const t = localStorage.getItem('qs.hosttab'); if (t) document.querySelector(`.tabs .tab[data-tab="${t}"]`)?.click(); } catch {}
 
 // ---------- 화면 설정 (정답 공개 방식 · 대기 화면 문구) ----------
 function syncSettings(g) {
+  syncQr(g);
   document.querySelectorAll('input[name="auto-reveal"]').forEach(r => { r.checked = (r.value === '1') === !!g.auto_reveal; });
   const t = $('#lobby-title'), sub = $('#lobby-sub');
   if (document.activeElement !== t && !t.dataset.dirty) t.value = g.lobby_title || '';
@@ -386,6 +536,15 @@ $('#lobby-save').addEventListener('click', async () => {
   delete $('#lobby-title').dataset.dirty; delete $('#lobby-sub').dataset.dirty;
   msg($('#msg'), '✔ 대기 화면 문구를 바꿨어요', 'ok');
 });
+
+// ---------- 진행 중 입장 QR 팝업 ----------
+$('#qr-toggle').addEventListener('click', () => act(() => rpc('host_set_qr', { p_pin: pin, p_on: !game?.show_qr })));
+function syncQr(g) {
+  const b = $('#qr-toggle'); const on = !!g.show_qr;
+  b.setAttribute('aria-pressed', on);
+  b.textContent = on ? '📱 QR 내리기' : '📱 스크린에 QR 띄우기';
+  b.classList.toggle('on', on);
+}
 
 // ---------- 스포트라이트 ----------
 async function setSpot(id) { await act(() => rpc('host_spotlight', { p_pin: pin, p_sid: id })); }

@@ -637,14 +637,14 @@ function accTag(name, z) {
     else if (kind === 'hand') { x = ex + side * g - w / 2; y = ey + g * 1.45 - h; }
     else { x = ex + side * g - w / 2; y = ht - h * (1 - sink); }
   }
-  return `<img class="px-acc acc-${kind}" src="assets/acc/${name}.webp?v=20261118c" alt="" draggable="false" style="width:${pct(w)};left:${pct(x)};top:${pct(y)}">`;
+  return `<img class="px-acc acc-${kind}" src="assets/acc/${name}.webp?v=20261119b" alt="" draggable="false" style="width:${pct(w)};left:${pct(x)};top:${pct(y)}">`;
 }
 
 // 캐릭터 그림. 예전처럼 avatarSVG 라는 이름으로 어디서나 씀. 표정(mood)은 CSS 모션·효과로 표현
 export function avatarSVG(raw, mood = 'idle', cls = '') {
   const a = normAvatar(raw);
   const wear = [ACC_IMG.h[a.h], ACC_IMG.f[a.f], ACC_IMG.b[a.b]].filter(Boolean).map(n => accTag(n, a.z)).join('');
-  const rider = `<span class="px-rider"><img class="px-img" src="assets/people/p${a.z}.webp?v=20261118c" alt="" draggable="false" decoding="async">${wear}</span>`;
+  const rider = `<span class="px-rider"><img class="px-img" src="assets/people/p${a.z}.webp?v=20261119b" alt="" draggable="false" decoding="async">${wear}</span>`;
   return `<span class="av px ch-${mood} ${cls}" aria-hidden="true">${rider}</span>`;
 }
 
@@ -654,3 +654,4 @@ export function mascotSVG(mood = 'idle', cls = '') {
 }
 // 벡터 원본이 필요할 때 (디자인 시스템 문서 등)
 export { avatarVector, mascotVector };
+

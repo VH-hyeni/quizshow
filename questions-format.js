@@ -24,6 +24,7 @@
 //   S: 정답 해설                ← 발표(칠판) 슬라이드: 퀴즈 의도·해설 설명용
 //   설명 내용을 한 줄씩         ← 아무 줄이나 그대로 칠판에 적혀요 (- 로 시작하면 글머리표)
 //   이미지: #3                  ← 진행자 화면 '이미지 넣기'로 올린 그림 (또는 https://… 주소)
+//   장표: #7                    ← PPT 장표 한 장을 스크린 전체에 크게 (칠판 없이)
 //
 // 빈 줄로 문항을 구분하고, # 으로 시작하는 줄은 메모(무시)입니다.
 
@@ -104,8 +105,9 @@ export function parseQuestions(text) {
     if (sm) {
       const sl = { kind: 'slide', text: sm[1].trim() || '발표', lines: [] };
       for (const line of lines.slice(1)) {
-        const im = line.match(/^(이미지|사진|img|image)\s*[:：]\s*(.+)$/i);
+        const im = line.match(/^(이미지|사진|img|image|장표)\s*[:：]\s*(.+)$/i);
         if (im) {
+          if (im[1] === '장표') sl.full = true;
           const v = im[2].trim();
           if (!/^#\d+$/.test(v) && !/^https?:\/\//.test(v) && !/^[\w./-]+\.(png|jpe?g|gif|webp|svg)$/i.test(v))
             throw new Error(`${n}번 문항: 이미지는 '이미지 넣기' 번호(#1)나 https:// 주소로 적어 주세요.`);
@@ -203,7 +205,7 @@ export function parseQuestions(text) {
 
 export function toText(questions) {
   return questions.map(q => {
-    if (q.kind === 'slide') return [`S: ${q.text}`, ...(q.lines || []), ...(q.image ? [`이미지: ${q.image}`] : [])].join('\n');
+    if (q.kind === 'slide') return [`S: ${q.text}`, ...(q.lines || []), ...(q.image ? [`${q.full ? '장표' : '이미지'}: ${q.image}`] : [])].join('\n');
     if (q.kind === 'game') {
       const g = GAMES[q.game] || GAMES.order;
       const lines = [`G: ${g.words[0]}${q.text && q.text !== g.name ? ' ' + q.text : ''}`];

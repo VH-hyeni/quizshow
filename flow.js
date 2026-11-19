@@ -1,5 +1,5 @@
 // 진행 순서: "다음" 버튼이 지금 상태에서 무엇을 할지 (진행자 화면 · 스크린 화면 공용)
-import { rpc } from './common.js?v=20261118c';
+import { rpc } from './common.js?v=20261119b';
 
 export const PHASE_NAME = {
   lobby: '대기 중', question: '진행 중', closed: '마감됨', reveal: '결과 공개', leaderboard: '순위 발표', end: '종료',

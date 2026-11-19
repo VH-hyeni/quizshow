@@ -1,6 +1,6 @@
-import { rpc, $, esc, jitter, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE } from './common.js?v=20261118c';
-import { GAMES, KIND_LABEL, kindOf, fmtPlay } from './questions-format.js?v=20261118c';
-import { avatarSVG, normAvatar, randomAvatar, PEOPLE, ACC_SLOTS, BAMTI, HAIR_COLORS } from './characters.js?v=20261118c';
+import { rpc, $, esc, jitter, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE } from './common.js?v=20261119b';
+import { GAMES, KIND_LABEL, kindOf, fmtPlay } from './questions-format.js?v=20261119b';
+import { avatarSVG, normAvatar, randomAvatar, PEOPLE, ACC_SLOTS, BAMTI, HAIR_COLORS } from './characters.js?v=20261119b';
 
 if (!configured) { showConfigError(); throw new Error('config.js not set'); }
 
@@ -8,6 +8,7 @@ document.title = `${TITLE} 참가`;
 $('#title').textContent = TITLE;
 
 const view = $('#view');
+let kicked = false, kickSeen = null;   // 진행자가 내보냈는지
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch {} },
@@ -110,6 +111,7 @@ function renderJoin(force = false) {
       updateSocial();
       lastKey = null; if (game) render(game);
     } catch (err) {
+      if (/KICKED/.test(err.message)) return showKicked();
       form.querySelector('.err').textContent = err.message;
       btn.disabled = false;
     }
@@ -117,7 +119,29 @@ function renderJoin(force = false) {
 }
 
 async function rejoin() {
-  if (nick) await rpc('join_game', { p_id: myId, p_nickname: nick, p_avatar: avatar });
+  if (!nick) return;
+  try { await rpc('join_game', { p_id: myId, p_nickname: nick, p_avatar: avatar }); }
+  catch (err) { if (/KICKED/.test(err.message)) showKicked(); throw err; }
+}
+
+// ---------- 진행자가 내보낸 경우 ----------
+function showKicked() {
+  kicked = true;
+  clearInterval(tick);
+  $('#social')?.classList.add('hidden');
+  $('#me')?.classList.add('hidden');
+  document.body.classList.remove('has-chatlog');
+  view.innerHTML = `<div class="center kicked"><div class="kicked-mark" aria-hidden="true">🚪</div>
+    <h2>퇴장 처리되었어요</h2><p class="muted">진행자가 이 참가자를 내보냈어요.<br>잘못된 경우라면 진행자에게 말해 주세요.</p></div>`;
+}
+async function checkKicked() {
+  try { await myStatus(); } catch {}
+}
+// 내 상태 가져오기. 내보내진 상태면 퇴장 화면을 띄우고 멈춤
+async function myStatus() {
+  const st = await rpc('my_status', { p_id: myId });
+  if (st?.kicked) { showKicked(); throw new Error('KICKED'); }
+  return st;
 }
 
 // ---------- 화면 그리기 ----------
@@ -125,6 +149,10 @@ var lastKey = null;
 function render(g) {
   const prev = game;
   game = g;
+  if (kicked) return;
+  // 누군가 내보내졌으면 내가 그 사람인지 한 번 확인 (100명이 몰리지 않게 조금씩 흩어서)
+  if (nick && kickSeen != null && g.kick_epoch !== kickSeen) setTimeout(checkKicked, Math.random() * 1500);
+  kickSeen = g.kick_epoch ?? 0;
   updateSocial();
   if (!nick) return renderJoin();
   // 진행자가 채팅·맵만 바꾼 경우처럼 진행 단계가 그대로면 화면을 다시 그리지 않음
@@ -228,7 +256,7 @@ function renderQuestion(g) {
         setPick(g, choice);
         status.textContent = '제출 완료! 결과를 기다려 주세요.';
       } else if (res === 'already') {
-        const st = await rpc('my_status', { p_id: myId });
+        const st = await myStatus();
         if (st?.choice != null) {
           setPick(g, st.choice);
           btns.forEach((x, i) => { x.classList.toggle('picked', i === st.choice); x.classList.toggle('dim', i !== st.choice); });
@@ -246,8 +274,8 @@ function renderQuestion(g) {
 }
 
 async function fetchStatus() {
-  let st = await rpc('my_status', { p_id: myId });
-  if (!st) { await rejoin(); st = await rpc('my_status', { p_id: myId }); }
+  let st = await myStatus();
+  if (!st) { await rejoin(); st = await myStatus(); }
   return st;
 }
 
@@ -258,7 +286,7 @@ async function renderReveal(g, seq) {
   await jitter(1600);   // 100명이 같은 순간에 몰리지 않게 조금씩 나눠서 물어봄
   let st = null;
   try { st = await fetchStatus(); } catch {}
-  if (seq !== renderSeq) return;
+  if (seq !== renderSeq || kicked) return;
   const pick = st?.choice ?? local;
   const myLine = pick != null
     ? `<div class="answer-line muted">내 선택 <b>${LABELS[pick]}. ${esc(q.options[pick])}</b></div>`
@@ -294,7 +322,7 @@ async function renderRank(g, seq, final) {
   await jitter(1600);
   let st = null;
   try { st = await fetchStatus(); } catch {}
-  if (seq !== renderSeq) return;
+  if (seq !== renderSeq || kicked) return;
   const podium = st && st.rank <= 3;
   view.innerHTML = `
     <div class="center">
@@ -367,10 +395,10 @@ async function showPlayed(g, value, seq) {
   ga.innerHTML = `<div class="game-done">${meBig('happy', 'hop')}<div class="game-record">${fmtPlay(g.question.game, value)}</div></div>`;
   gs.textContent = '순위 확인 중…';
   await jitter(700);
-  if (seq !== renderSeq) return;
+  if (seq !== renderSeq || kicked) return;
   try {
-    const st = await rpc('my_status', { p_id: myId });
-    if (seq !== renderSeq) return;
+    const st = await myStatus();
+    if (seq !== renderSeq || kicked) return;
     gs.textContent = st?.play_rank ? `지금까지 ${st.play_rank}위예요! 결과 발표를 기다려 주세요.` : '결과 발표를 기다려 주세요.';
   } catch { gs.textContent = '결과 발표를 기다려 주세요.'; }
 }
@@ -455,7 +483,7 @@ async function renderGameResult(g, seq) {
   await jitter(1000);
   let st = null;
   try { st = await fetchStatus(); } catch {}
-  if (seq !== renderSeq) return;
+  if (seq !== renderSeq || kicked) return;
   const info = GAMES[g.question.game] || GAMES.order;
   const played = st?.play != null;
   const top3 = played && st.play_rank <= 3;
@@ -475,7 +503,7 @@ async function renderGameResult(g, seq) {
 function updateSocial() {
   const g = game;
   const playing = g && g.phase === 'question' && g.question?.kind === 'game';   // 게임 중엔 손가락이 바쁘니 숨김
-  const show = !!nick && !playing;
+  const show = !!nick && !playing && !kicked;
   $('#social').classList.toggle('hidden', !show);
   document.body.classList.toggle('has-social', show);
   const chatOn = g ? g.chat_on !== false : true;
@@ -576,4 +604,5 @@ showMe();
 if (!nick) renderJoin();
 else rejoin().catch(() => {});
 syncClock();
+if (nick) checkKicked();
 watchGame(render, on => $('#conn').classList.toggle('on', on));

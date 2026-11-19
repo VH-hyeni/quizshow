@@ -1,8 +1,8 @@
-import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE, joinUrl } from './common.js?v=20261118c';
-import { GAMES, KIND_LABEL, kindOf, fmtPlay, showOf, SHOW_LABEL } from './questions-format.js?v=20261118c';
-import { nextAction, prevAction, revealAction, hostActions } from './flow.js?v=20261118c';
-import { sound, sfx, bgm } from './sound.js?v=20261118c';
-import { avatarSVG, mascotSVG } from './characters.js?v=20261118c';
+import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE, joinUrl } from './common.js?v=20261119b';
+import { GAMES, KIND_LABEL, kindOf, fmtPlay, showOf, SHOW_LABEL } from './questions-format.js?v=20261119b';
+import { nextAction, prevAction, revealAction, hostActions } from './flow.js?v=20261119b';
+import { sound, sfx, bgm } from './sound.js?v=20261119b';
+import { avatarSVG, mascotSVG } from './characters.js?v=20261119b';
 
 if (!configured) { showConfigError(); throw new Error('config.js not set'); }
 
@@ -71,6 +71,7 @@ function render(g) {
   $('#chatpanel').classList.toggle('off', g.chat_on === false || bubbleMode);
   updateCtrl();
   setSpot(g);
+  setQrPop(!!g.show_qr || qrLocal);
   autoFlow(g);
   if (g.phase === 'lobby') { setLobbyText(g); return renderLobby(); }
   if (g.question?.kind === 'slide' && ['question', 'closed', 'reveal'].includes(g.phase)) return renderSlide(g);
@@ -78,11 +79,12 @@ function render(g) {
   if (g.phase === 'leaderboard' || g.phase === 'end') return renderBoard(g.phase === 'end');
 }
 
-// 맵: 진행자가 고른 배경. '자동'이면 문제(보기 방이 있는 화면)는 인형의 집, 나머지는 퀴즈 무대
+// 스크린 배경: 진행자 화면 → 화면 설정 → 스크린 배경 (예전 값 doll·stage 도 받아 줌)
+const MAPS = { auto: 'auto', night: 'night', purple: 'purple', wine: 'wine', forest: 'forest', ocean: 'ocean', doll: 'wine', stage: 'purple' };
 function setMap(g) {
-  const roomy = ['question', 'closed', 'reveal'].includes(g.phase) && g.question?.kind !== 'game';
-  const m = g.map === 'doll' || g.map === 'stage' ? g.map : roomy ? 'doll' : 'stage';
+  const m = MAPS[g.map] || 'auto';
   if (document.body.dataset.map !== m) document.body.dataset.map = m;
+  document.body.classList.toggle('deck-on', g.question?.kind === 'slide' && !!g.question?.full && ['question', 'closed', 'reveal'].includes(g.phase));
 }
 
 function playTransition(g) {
@@ -168,6 +170,24 @@ function setLobbyText(g) {
   s.innerHTML = g?.lobby_sub ? lines(g.lobby_sub) : '';
   s.classList.toggle('hidden', !g?.lobby_sub);
 }
+
+// ---------- 진행 중 입장 QR 팝업 ----------
+let qrLocal = false, qrDrawn = false;
+function setQrPop(on) {
+  const box = $('#qrpop');
+  if (on && !qrDrawn) {
+    qrDrawn = true;
+    const url = joinUrl();
+    $('#qrpop-url').textContent = url.replace(/^https?:\/\//, '');
+    drawQR($('#qrpop-qr'), url);
+  }
+  box.classList.toggle('hidden', !on);
+}
+document.addEventListener('keydown', e => {
+  if (document.activeElement?.tagName === 'INPUT') return;
+  if (e.key === 'q' || e.key === 'Q' || e.key === 'ㅂ') { qrLocal = !qrLocal; setQrPop(qrLocal || !!game?.show_qr); }
+});
+$('#qrpop').addEventListener('click', () => { qrLocal = false; setQrPop(!!game?.show_qr); });
 
 // ---------- 스포트라이트 ----------
 // 진행자가 고른 사람 주변만 밝게(노란 은은한 빛), 나머지는 어둡게. 화면에 그 사람이 없으면 가운데에 크게 불러내요
@@ -310,6 +330,16 @@ function renderSlide(g) {
   if (view === key) return;
   view = key;
   stage.classList.remove('crowd-mode');
+  if (q.full && q.image) {
+    // PPT 장표: 칠판 없이 스크린 가득
+    stage.innerHTML = `<div class="deck-wrap"><img id="slide-img" class="deck-img" alt="${esc(q.text)}"></div>`;
+    slideImage(q.image).then(src => {
+      const im = $('#slide-img');
+      if (!im || view !== key) return;
+      if (src) im.src = src; else im.closest('.deck-wrap').innerHTML = `<div class="deck-miss">장표 그림을 찾지 못했어요 (${esc(q.image)})</div>`;
+    });
+    return;
+  }
   const lines = (q.lines || []).map(l => /^[-•·*]\s*/.test(l)
     ? `<li>${esc(l.replace(/^[-•·*]\s*/, ''))}</li>` : `<p>${esc(l)}</p>`).join('');
   stage.innerHTML = `
@@ -744,6 +774,16 @@ function showFeed(it, quiet = false) {
 }
 
 // ---------- 픽셀 말풍선 (채팅 표시 = 캐릭터 말풍선일 때) ----------
+// 말풍선 꼬리가 이름표 바로 위에 오게 하고, 화면 밖으로 나가지 않게 좌우를 당겨 줌
+function placeBubble(el, b) {
+  const parts = [...el.children].filter(c => c !== b && !c.classList.contains('bubble'));
+  const top = Math.min(...parts.map(c => c.getBoundingClientRect().top));
+  const box = el.getBoundingClientRect();
+  b.style.bottom = `calc(${Math.round(box.bottom - top)}px + 1.4vh)`;
+  const r = b.getBoundingClientRect(), pad = innerWidth * 0.015;
+  const shift = r.left < pad ? pad - r.left : r.right > innerWidth - pad ? innerWidth - pad - r.right : 0;
+  if (shift) { b.style.marginLeft = `${shift}px`; b.style.setProperty('--tail', `${-shift}px`); }
+}
 let bubbleMode = false;
 function showBubble(it) {
   const els = findAvatars(it.id);
@@ -754,6 +794,7 @@ function showBubble(it) {
       b.className = 'bubble';
       b.textContent = it.b;
       el.append(b);
+      placeBubble(el, b);
       el.classList.add('talking');
       clearTimeout(el._bt);
       el._bt = setTimeout(() => { b.remove(); el.classList.remove('talking'); }, 5500);

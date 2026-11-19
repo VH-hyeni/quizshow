@@ -1,4 +1,4 @@
-@import url('tokens.css?v=20261118c');
+@import url('tokens.css?v=20261119b');
 
 /* =====================================================================
    컴포넌트 — 색/크기는 tokens.css 변수만 사용
@@ -762,7 +762,7 @@ body.player, body.screen { font-family: var(--font-pixel); }
   animation: bubble-in .35s steps(3) both;
 }
 /* 꼬리: 네모 두 칸 */
-.screen .bubble::before, .screen .bubble::after { content: ''; position: absolute; left: 50%; width: 1.2vh; height: .8vh; background: #fff; translate: -50% 0; }
+.screen .bubble::before, .screen .bubble::after { content: ''; position: absolute; left: calc(50% + var(--tail, 0px)); width: 1.2vh; height: .8vh; background: #fff; translate: -50% 0; }
 .screen .bubble::before { top: 100%; box-shadow: -.4vh 0 0 0 var(--px), .4vh 0 0 0 var(--px); }
 .screen .bubble::after { top: calc(100% + .8vh); width: .4vh; height: .4vh; background: var(--px); }
 .screen .pc.vip .bubble { background: #FFF3C4; }
@@ -794,10 +794,8 @@ body.player, body.screen { font-family: var(--font-pixel); }
 .av.px { isolation: isolate; }
 .player .maker .preview .stage-av { width: 150px; }
 /* 오답: 살짝 풀 죽은 색 · 미응답: 흐릿하게 졸기 · 두근: 통통 */
-.ch-sad .px-img { filter: saturate(.55) brightness(.92); }
 .ch-sleep .px-img { filter: grayscale(.5); opacity: .7; }
 .ch-sleep::after { content: 'z'; position: absolute; right: -4%; top: 2%; font-weight: 800; font-size: max(10px, 28%); color: var(--text-sub, #888); animation: zz 1.6s ease-in-out infinite; }
-.ch-sad::after { content: ''; position: absolute; left: 30%; top: 40%; width: 7%; height: 9%; background: #8FD0FF; border-radius: 50% 50% 50% 50% / 30% 30% 70% 70%; opacity: .9; }
 @keyframes zz { 0%, 100% { transform: translateY(0); opacity: .4; } 50% { transform: translateY(-30%); opacity: 1; } }
 
 /* 어두운 화면에서도 흰 말풍선·QR 카드 글씨는 진하게 */
@@ -1034,3 +1032,128 @@ body.player { background: #0B0C11; }
 .player .stat, .player .stats > div { background: transparent; border: 1px solid var(--hair); }
 .player .social { background: rgba(11, 12, 17, .92); border-top: 1px solid var(--hair); backdrop-filter: blur(10px); }
 .player .social .btn.ghost, .player .dance-btn, .player [data-d] { background: transparent; border: 1px solid var(--hair); }
+
+
+/* 폰: 퇴장 화면 */
+.player .kicked { text-align: center; gap: var(--sp-3); }
+.player .kicked-mark { font-size: 56px; line-height: 1; filter: grayscale(.3); }
+.player .kicked h2 { font-size: 22px; margin: 0; }
+.player .kicked p { line-height: 1.6; }
+.host .ppl .star.kick { color: var(--text-off); }
+.host .ppl .star.kick:hover:not(:disabled) { color: var(--crimson-text); border-color: var(--primary); }
+
+/* 스크린: 진행 중 입장 QR 팝업 */
+.qrpop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(5, 6, 10, .72); backdrop-filter: blur(3px); animation: qrpop-in .35s steps(4) both; cursor: pointer; }
+.qrpop.hidden { display: none; }
+.qrpop-card { display: flex; align-items: center; gap: 5vh; padding: 4.5vh 5vh; background: #FFF7F0; color: #1F0A0E;
+  box-shadow: 0 -.6vh 0 0 #1F0A0E, 0 .6vh 0 0 #1F0A0E, -.6vh 0 0 0 #1F0A0E, .6vh 0 0 0 #1F0A0E, 1.2vh 1.6vh 0 0 rgba(0, 0, 0, .45); }
+.qrpop-qr { width: 46vh; height: 46vh; flex: none; }
+.qrpop-qr canvas, .qrpop-qr img { width: 100% !important; height: 100% !important; display: block; image-rendering: pixelated; }
+.qrpop-text { max-width: 60vh; }
+.qrpop-text h2 { font-size: 6vh; line-height: 1.15; margin: 0 0 2.4vh; color: #1F0A0E; }
+.qrpop-text p { font-size: 3vh; line-height: 1.5; margin: 0 0 3vh; color: #4A3A40; }
+.qrpop-url { display: inline-block; font-size: 2.6vh; font-weight: 700; padding: .8vh 1.6vh; background: #1F0A0E; color: #FFF7F0; }
+@keyframes qrpop-in { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .qrpop { animation: none; } }
+.host .btn.ghost.on { border-color: var(--accent); color: var(--accent); background: rgba(255, 201, 60, .08); }
+
+/* =====================================================================
+   스크린 배경 (진행자 화면 → 화면 설정 → 스크린 배경)
+   모두 어두운 톤. 글씨 상자는 그대로라 어떤 배경이든 잘 읽혀요
+   ===================================================================== */
+body.screen[data-map] { background-attachment: fixed; transition: background-color .4s; }
+body.screen[data-map="night"] {
+  background:
+    radial-gradient(1.5px 1.5px at 12% 18%, #fff 98%, transparent) ,
+    radial-gradient(1.5px 1.5px at 78% 12%, #fff 98%, transparent),
+    radial-gradient(2px 2px at 64% 34%, #FFE8A3 98%, transparent),
+    radial-gradient(1.5px 1.5px at 30% 62%, #cfd8ff 98%, transparent),
+    radial-gradient(2px 2px at 88% 70%, #fff 98%, transparent),
+    radial-gradient(1.5px 1.5px at 46% 86%, #fff 98%, transparent),
+    radial-gradient(1px 1px, rgba(255, 255, 255, .55) 98%, transparent) 0 0 / 7vh 7vh,
+    radial-gradient(1px 1px, rgba(190, 205, 255, .35) 98%, transparent) 3.5vh 3.5vh / 11vh 11vh,
+    radial-gradient(120% 80% at 50% 110%, #1C2B5A 0%, transparent 60%),
+    linear-gradient(180deg, #060A1C 0%, #0B1433 60%, #13204A 100%);
+}
+body.screen[data-map="purple"] {
+  background:
+    conic-gradient(from 160deg at 22% -8%, transparent 0deg, rgba(196, 140, 255, .22) 12deg, transparent 26deg),
+    conic-gradient(from 174deg at 78% -8%, transparent 0deg, rgba(255, 140, 220, .18) 12deg, transparent 26deg),
+    radial-gradient(90% 60% at 50% 105%, #3A1458 0%, transparent 70%),
+    linear-gradient(180deg, #0E0618 0%, #1C0B30 100%);
+}
+body.screen[data-map="wine"] {
+  background:
+    radial-gradient(80% 60% at 50% -10%, rgba(255, 90, 120, .22), transparent 70%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, .025) 0 2px, transparent 2px 9vh),
+    linear-gradient(180deg, #1A0610 0%, #2A0A18 100%);
+}
+body.screen[data-map="forest"] {
+  background:
+    radial-gradient(70% 50% at 50% -10%, rgba(160, 255, 170, .14), transparent 70%),
+    radial-gradient(2px 2px, rgba(200, 255, 140, .5) 98%, transparent) 0 0 / 13vh 9vh,
+    linear-gradient(180deg, #06140C 0%, #0C2216 100%);
+}
+body.screen[data-map="ocean"] {
+  background:
+    radial-gradient(80% 50% at 50% -10%, rgba(120, 220, 255, .2), transparent 70%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, .03) 0 2px, transparent 2px 6vh),
+    linear-gradient(180deg, #03121C 0%, #072233 100%);
+}
+
+/* 발표: PPT 장표 한 장을 스크린 가득 */
+.screen .deck-wrap { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+.screen .deck-img { max-width: 100%; max-height: 100%; object-fit: contain; display: block;
+  box-shadow: 0 0 0 .5vh #000, 1vh 1.2vh 0 0 rgba(0, 0, 0, .45); background: #fff; }
+.screen .deck-miss { color: var(--text-sub); font-size: 2.6vh; }
+body.screen.deck-on .qhead, body.screen.deck-on #ans, body.screen.deck-on .banner { display: none !important; }
+
+/* =====================================================================
+   폰 글씨 한 단계 키우기
+   ===================================================================== */
+body.player {
+  --fs-xs: 13.5px; --fs-sm: 15.5px; --fs-md: 18px; --fs-lg: 20px;
+  --fs-xl: 24px; --fs-2xl: 31px; --fs-3xl: 40px; --fs-4xl: 52px;
+  font-size: var(--fs-md);
+}
+.player input, .player .btn { font-size: max(1em, var(--fs-md)); }
+.social .react-row button small { font-size: 12px; }
+.social .chat-log li { font-size: 16px; }
+.social .chat-log b { font-size: 13px; }
+.social .chat-form input { font-size: 17px; }
+.player .slide-chip { font-size: 15px; }
+
+/* =====================================================================
+   진행자: 이미지 갤러리 · 크게 보기
+   ===================================================================== */
+.host .gal-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
+.host .gal-head h2 { margin: 0; }
+.host .gal-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.host .gallery { list-style: none; margin: var(--sp-4) 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: var(--sp-4); }
+.host .gallery > .muted { grid-column: 1 / -1; padding: var(--sp-6) 0; text-align: center; }
+.host .gal-item { display: flex; flex-direction: column; border: 1px solid var(--hair, var(--line)); border-radius: 12px; overflow: hidden; background: #0B0C11; transition: border-color .15s; }
+.host .gal-item:hover { border-color: var(--hair-hi, var(--line)); }
+.host .gal-thumb { position: relative; display: block; aspect-ratio: 16 / 10; width: 100%; padding: 0; border: 0; cursor: zoom-in;
+  background: repeating-conic-gradient(#15161d 0 25%, #101118 0 50%) 0 0 / 16px 16px; }
+.host .gal-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.host .gal-nothumb { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--text-off); font-size: 12px; }
+.host .gal-id { position: absolute; left: 8px; top: 8px; padding: 1px 7px; border-radius: 6px; background: rgba(0, 0, 0, .7); color: #fff; font-size: 12px; font-weight: 700; }
+.host .gal-meta { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px 4px; font-size: 13px; min-width: 0; }
+.host .gal-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.host .gal-meta .muted { font-size: 12px; }
+.host .gal-btns { display: flex; gap: 4px; padding: 6px 8px 10px; flex-wrap: wrap; }
+.host .gal-btns .btn { padding: 4px 9px; font-size: 12px; }
+.host .gal-btns .gal-del { margin-left: auto; }
+.host .gal-btns .gal-del:hover { color: var(--crimson-text); border-color: var(--primary); }
+.lightbox { position: fixed; inset: 0; z-index: 100; background: rgba(4, 5, 8, .88); display: grid; place-items: center; padding: 4vh 4vw; cursor: zoom-out; }
+.lightbox.hidden { display: none; }
+.lightbox figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 100%; max-height: 100%; }
+.lightbox img { max-width: 92vw; max-height: 84vh; object-fit: contain; background: #fff; border-radius: 6px; }
+.lightbox figcaption { color: #ddd; font-size: 14px; }
+.host .tab #media-count:not(:empty) { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 4px; border-radius: var(--r-pill); background: var(--card-2); color: var(--text-sub); font-size: 11px; }
+.player header .brand { white-space: nowrap; min-width: 0; overflow: hidden; font-size: 17px; }
+.player header .brand #title { overflow: hidden; text-overflow: ellipsis; }
+.player header .me { white-space: nowrap; min-width: 0; font-size: 15.5px; }
+.player header .me #me-name { overflow: hidden; text-overflow: ellipsis; max-width: 30vw; }
+.player header .me button { white-space: nowrap; font-size: 13px !important; padding: 5px 10px; }
+.player .btn, .player button { word-break: keep-all; }

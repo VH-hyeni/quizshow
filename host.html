@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>진행자</title>
-  <link rel="stylesheet" href="style.css?v=20261118c">
+  <link rel="stylesheet" href="style.css?v=20261119b">
 </head>
 <body class="host">
   <!-- 로그인 -->
@@ -63,6 +63,10 @@
               <label><input type="radio" name="auto-reveal" value="1"><span>자동 (시간 끝나면 바로)</span></label>
             </div>
           </div>
+          <div class="qgroup">
+            <span class="qlabel">입장 QR</span>
+            <button class="btn ghost sm" id="qr-toggle" type="button" aria-pressed="false">📱 스크린에 QR 띄우기</button>
+          </div>
           <div class="qgroup spot-group hidden" id="spot-group">
             <span class="qlabel">🔦 스포트라이트</span>
             <span class="spot-who" id="spot-who"></span>
@@ -80,6 +84,7 @@
         <nav class="tabs" role="tablist">
           <button class="tab" role="tab" data-tab="q" aria-selected="true">📝 문항</button>
           <button class="tab" role="tab" data-tab="p">👥 참가자 <span id="ppl-count"></span></button>
+          <button class="tab" role="tab" data-tab="m">🖼 이미지 <span id="media-count"></span></button>
           <button class="tab" role="tab" data-tab="s">🖥 화면 설정</button>
           <button class="tab" role="tab" data-tab="r">초기화</button>
         </nav>
@@ -99,6 +104,7 @@
             <button class="btn ghost sm" type="button" data-tpl="reaction">반응속도</button>
             <button class="btn ghost sm" type="button" data-tpl="tap">광클</button>
             <label class="btn ghost sm img-btn">🖼 이미지 넣기<input type="file" id="img-pick" accept="image/*" hidden></label>
+            <label class="btn ghost sm img-btn">📊 PPT 장표 넣기<input type="file" id="deck-pick" accept="application/pdf,.pdf,image/*" multiple hidden></label>
           </div>
           <details class="help">
             <summary>입력 형식 보기</summary>
@@ -129,6 +135,25 @@
           <ul class="ppl" id="ppl"><li class="muted">아직 참가자가 없습니다</li></ul>
         </div>
 
+        <div class="pane hidden" data-pane="m">
+          <div class="gal-head">
+            <h2>이미지 갤러리 <span class="muted" id="gal-count"></span></h2>
+            <div class="gal-actions">
+              <label class="btn ghost sm img-btn">🖼 이미지 올리기<input type="file" id="gal-pick" accept="image/*" multiple hidden></label>
+              <label class="btn ghost sm img-btn">📊 PPT 장표 올리기<input type="file" id="gal-deck" accept="application/pdf,.pdf,image/*" multiple hidden></label>
+              <button class="btn ghost sm" id="gal-refresh" type="button">새로고침</button>
+            </div>
+          </div>
+          <details class="help">
+            <summary>PPT 장표는 어떻게 넣나요?</summary>
+            <p>파워포인트에서 <b>파일 → 내보내기 → PDF</b>로 저장한 뒤 그 PDF를 올리면 장마다 한 장표씩 들어가요.
+              (키노트·구글 슬라이드도 PDF로 받으면 돼요.) 장표 그림(PNG·JPG)을 직접 올려도 돼요.
+              올린 장표는 문항 목록 끝에 발표로 추가되고, 스크린에 칠판 없이 화면 가득 보여요.</p>
+          </details>
+          <div class="msg" id="gal-msg"></div>
+          <ul class="gallery" id="gallery"><li class="muted">아직 올린 이미지가 없어요</li></ul>
+        </div>
+
         <div class="pane hidden" data-pane="s">
           <h2>대기 화면 문구</h2>
           <label class="field"><span>큰 문구</span><input id="lobby-title" maxlength="60" placeholder="QR 찍고 내 캐릭터로 입장!"></label>
@@ -150,9 +175,12 @@
           <h2>스크린 배경</h2>
           <label class="map-pick">배경색
             <select id="map-pick">
-              <option value="auto">자동</option>
-              <option value="doll">분홍빛</option>
-              <option value="stage">보랏빛</option>
+              <option value="auto">기본 (검정)</option>
+              <option value="night">밤하늘</option>
+              <option value="purple">보랏빛 무대</option>
+              <option value="wine">와인</option>
+              <option value="forest">깊은 숲</option>
+              <option value="ocean">깊은 바다</option>
             </select>
           </label>
         </div>
@@ -165,8 +193,11 @@
           </div>
         </div>
       </section>
+      <div class="lightbox hidden" id="lightbox" role="dialog" aria-label="이미지 크게 보기">
+        <figure><img id="lb-img" alt=""><figcaption id="lb-cap"></figcaption></figure>
+      </div>
     </div>
   </div>
-  <script type="module" src="host.js?v=20261118c"></script>
+  <script type="module" src="host.js?v=20261119b"></script>
 </body>
 </html>
