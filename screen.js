@@ -1,8 +1,8 @@
-import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE, joinUrl } from './common.js?v=20261119f';
-import { GAMES, KIND_LABEL, kindOf, fmtPlay, showOf, SHOW_LABEL, revealOf } from './questions-format.js?v=20261119f';
-import { nextAction, prevAction, revealAction, hostActions } from './flow.js?v=20261119f';
-import { sound, sfx, bgm } from './sound.js?v=20261119f';
-import { avatarSVG, mascotSVG } from './characters.js?v=20261119f';
+import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE, joinUrl } from './common.js?v=20261119g';
+import { GAMES, KIND_LABEL, kindOf, fmtPlay, showOf, SHOW_LABEL, revealOf } from './questions-format.js?v=20261119g';
+import { nextAction, prevAction, revealAction, hostActions } from './flow.js?v=20261119g';
+import { sound, sfx, bgm } from './sound.js?v=20261119g';
+import { avatarSVG, mascotSVG } from './characters.js?v=20261119g';
 
 if (!configured) { showConfigError(); throw new Error('config.js not set'); }
 

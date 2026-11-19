@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>진행자</title>
-  <link rel="stylesheet" href="style.css?v=20261119f">
+  <link rel="stylesheet" href="style.css?v=20261119g">
 </head>
 <body class="host">
   <!-- 로그인 -->
@@ -142,10 +142,16 @@
         <div class="pane hidden" data-pane="p">
           <div class="help">
             <b>★ 크게</b> 스크린에서 2배 크기 · 금색 이름 (사장님, 사회자, 주인공에게)<br>
-            <b>🔦 비추기</b> 스크린 주변을 어둡게 하고 그 사람만 노란 조명으로 비춰요. 한 번 더 누르면 꺼져요
+            <b>🔦 비추기</b> 스크린 주변을 어둡게 하고 그 사람만 노란 조명으로 비춰요. 한 번 더 누르면 꺼져요<br>
+            <b>내보내기</b> 기록을 지우고 내보내요. 그 폰에서 '다시 들어가기'로 다시 들어올 수 있어요 ·
+            <b>추방</b> 같은 폰으로 다시 못 들어와요 (아래 '추방한 사람'에서 풀 수 있어요)
           </div>
           <input class="ppl-search" id="ppl-search" placeholder="이름으로 찾기" aria-label="참가자 이름 검색">
           <ul class="ppl" id="ppl"><li class="muted">아직 참가자가 없습니다</li></ul>
+          <div class="banned hidden" id="banned">
+            <h2>추방한 사람</h2>
+            <ul class="banned-list" id="banned-list"></ul>
+          </div>
         </div>
 
         <div class="pane hidden" data-pane="m">
@@ -211,6 +217,6 @@
       </div>
     </div>
   </div>
-  <script type="module" src="host.js?v=20261119f"></script>
+  <script type="module" src="host.js?v=20261119g"></script>
 </body>
 </html>

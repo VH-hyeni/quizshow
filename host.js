@@ -1,7 +1,7 @@
-import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, LABELS, TITLE, joinUrl } from './common.js?v=20261119f';
-import { parseQuestions, toText, SAMPLE, TEMPLATES, KIND_LABEL, kindOf, GAMES, fmtPlay, showOf, SHOW_LABEL, revealOf } from './questions-format.js?v=20261119f';
-import { nextAction as flowNext, prevAction, hostActions, PHASE_NAME } from './flow.js?v=20261119f';
-import { avatarSVG } from './characters.js?v=20261119f';
+import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, LABELS, TITLE, joinUrl } from './common.js?v=20261119g';
+import { parseQuestions, toText, SAMPLE, TEMPLATES, KIND_LABEL, kindOf, GAMES, fmtPlay, showOf, SHOW_LABEL, revealOf } from './questions-format.js?v=20261119g';
+import { nextAction as flowNext, prevAction, hostActions, PHASE_NAME } from './flow.js?v=20261119g';
+import { avatarSVG } from './characters.js?v=20261119g';
 
 if (!configured) { showConfigError(); throw new Error('config.js not set'); }
 
@@ -613,20 +613,41 @@ function renderPeople() {
         <span class="ppl-av">${avatarSVG(p.a)}</span><span class="ppl-n">${esc(p.n)}</span>
         <button type="button" class="star" data-vip="${p.id}" aria-pressed="${p.v}" title="${p.v ? '크게 보기 끄기' : '크게 보기'}">${p.v ? '★ 크게' : '☆ 크게'}</button>
         <button type="button" class="star spot" data-spot="${p.id}" aria-pressed="${game?.spotlight === p.id}" title="스포트라이트">🔦 ${game?.spotlight === p.id ? '비추는 중' : '비추기'}</button>
-        <button type="button" class="star kick" data-kick="${p.id}" title="이 참가자 내보내기">내보내기</button></li>`).join('')
+        <button type="button" class="star kick" data-kick="${p.id}" title="내보내기 — 같은 폰으로 다시 들어올 수 있어요">내보내기</button>
+        <button type="button" class="star kick ban" data-ban="${p.id}" title="추방 — 같은 폰으로 다시 못 들어와요">추방</button></li>`).join('')
     : `<li class="muted">${q ? '찾는 이름이 없어요' : '아직 참가자가 없습니다'}</li>`;
 }
 $('#ppl-search').addEventListener('input', renderPeople);
+// 추방한 사람 목록 · 풀기
+async function loadBanned() {
+  if (!pin) return;
+  let list = [];
+  try { list = await rpc('host_list_banned', { p_pin: pin }) || []; } catch { return; }
+  $('#banned').classList.toggle('hidden', !list.length);
+  $('#banned-list').innerHTML = list.map(b => `<li><span>${esc(b.n || '이름 없음')}</span>
+    <button class="btn ghost sm" type="button" data-unban="${b.id}">추방 풀기</button></li>`).join('');
+}
+$('#banned-list').addEventListener('click', async e => {
+  const b = e.target.closest('[data-unban]'); if (!b) return;
+  try { await rpc('host_unban', { p_pin: pin, p_sid: b.dataset.unban }); loadBanned(); msg($('#msg'), '추방을 풀었어요. 그 폰으로 다시 들어올 수 있어요.', 'ok'); }
+  catch (err) { msg($('#msg'), err.message, 'err'); }
+});
 $('#ppl').addEventListener('click', async e => {
-  const k = e.target.closest('[data-kick]');
+  const k = e.target.closest('[data-kick],[data-ban]');
   if (k) {
-    const p = people.find(x => x.id === k.dataset.kick);
-    if (!p || !confirm(`'${p.n}' 님을 내보낼까요?\n표·점수·채팅이 지워지고, 같은 폰으로는 다시 들어올 수 없어요.\n(전체 초기화하면 다시 들어올 수 있어요)`)) return;
+    const ban = !!k.dataset.ban;
+    const p = people.find(x => x.id === (k.dataset.kick || k.dataset.ban));
+    if (!p) return;
+    const q = ban
+      ? `'${p.n}' 님을 추방할까요?\n표·점수·채팅이 지워지고, 같은 폰으로는 다시 들어올 수 없어요.\n(참가자 탭 아래 '추방한 사람'에서 풀 수 있어요)`
+      : `'${p.n}' 님을 내보낼까요?\n표·점수·채팅이 지워져요. 그 폰에 '다시 들어가기' 버튼이 떠서 원하면 다시 들어올 수 있어요.`;
+    if (!confirm(q)) return;
     k.disabled = true;
     try {
-      await rpc('host_kick', { p_pin: pin, p_sid: p.id });
+      await rpc('host_kick', { p_pin: pin, p_sid: p.id, p_permanent: ban });
       people = people.filter(x => x !== p); renderPeople();
-      msg($('#msg'), `${p.n} 님을 내보냈어요`, 'ok');
+      msg($('#msg'), ban ? `${p.n} 님을 추방했어요` : `${p.n} 님을 내보냈어요 (다시 들어올 수 있어요)`, 'ok');
+      if (ban) loadBanned();
     } catch (err) { k.disabled = false; msg($('#msg'), err.message, 'err'); }
     return;
   }
@@ -645,6 +666,7 @@ document.querySelectorAll('.tabs .tab').forEach(t => t.addEventListener('click',
   document.querySelectorAll('.pane').forEach(p => p.classList.toggle('hidden', p.dataset.pane !== t.dataset.tab));
   try { localStorage.setItem('qs.hosttab', t.dataset.tab); } catch {}
   if (t.dataset.tab === 'm') loadGallery();
+  if (t.dataset.tab === 'p') loadBanned();
 }));
 try { const t = localStorage.getItem('qs.hosttab'); if (t) document.querySelector(`.tabs .tab[data-tab="${t}"]`)?.click(); } catch {}
 

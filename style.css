@@ -1,4 +1,4 @@
-@import url('tokens.css?v=20261119f');
+@import url('tokens.css?v=20261119g');
 
 /* =====================================================================
    컴포넌트 — 색/크기는 tokens.css 변수만 사용
@@ -1189,3 +1189,10 @@ body.player {
 .host .rv-note { flex-basis: 100%; font-size: 12.5px; color: var(--accent); }
 .host .rv-note:empty { display: none; }
 .host .qlabel small { font-weight: 500; font-size: 11px; }
+.host .ppl .star.ban { color: var(--text-off); }
+.host .ppl .star.ban:hover:not(:disabled) { color: #fff; background: var(--primary); border-color: var(--primary); }
+.host .banned-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--hair, var(--line)); border-radius: 12px; }
+.host .banned-list li { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--hair, var(--line)); }
+.host .banned-list li:last-child { border-bottom: 0; }
+.player .kicked .btn { margin-top: var(--sp-3); }
+.host .banned { margin-top: var(--sp-6); }

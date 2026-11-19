@@ -73,11 +73,15 @@ create table if not exists public.qsets (
 alter table public.qsets enable row level security;
 revoke all on public.qsets from anon, authenticated;
 
--- 진행자가 내보낸 참가자 (같은 폰으로는 다시 못 들어옴. 전체 초기화하면 풀림)
+-- 진행자가 내보낸 참가자
+--   permanent = false : 내보내기 (폰에 '다시 들어가기' 버튼이 떠서 같은 폰으로 다시 들어올 수 있음)
+--   permanent = true  : 추방 (같은 폰으로는 못 들어옴. 진행자 화면에서 풀거나 전체 초기화하면 풀림)
 create table if not exists public.banned (
   id          uuid primary key,
   created_at  timestamptz not null default now()
 );
+alter table public.banned add column if not exists permanent boolean not null default true;
+alter table public.banned add column if not exists nickname  text;
 alter table public.banned enable row level security;
 revoke all on public.banned from anon, authenticated;
 
@@ -199,15 +203,21 @@ returns jsonb language sql immutable as $$
 $$;
 
 drop function if exists public.join_game(uuid, text);
-create or replace function public.join_game(p_id uuid, p_nickname text, p_avatar jsonb default '{}'::jsonb)
+drop function if exists public.join_game(uuid, text, jsonb);
+create or replace function public.join_game(p_id uuid, p_nickname text, p_avatar jsonb default '{}'::jsonb, p_again boolean default false)
 returns void language plpgsql security definer set search_path = public as $$
 begin
   p_nickname := btrim(coalesce(p_nickname, ''));
   if char_length(p_nickname) = 0 or char_length(p_nickname) > 20 then
     raise exception '닉네임은 1~20자로 입력해 주세요.';
   end if;
-  if exists (select 1 from banned where id = p_id) then
+  if exists (select 1 from banned where id = p_id and permanent) then
     raise exception 'KICKED';
+  end if;
+  -- 내보내기만 당한 사람: '다시 들어가기'를 눌렀을 때만 들어옴 (자동 재접속으로 몰래 돌아오지 않게)
+  if exists (select 1 from banned where id = p_id and not permanent) then
+    if not coalesce(p_again, false) then raise exception 'KICKED_OUT'; end if;
+    delete from banned where id = p_id;
   end if;
   if not exists (select 1 from players where id = p_id)
      and (select count(*) from players) >= 500 then
@@ -245,7 +255,7 @@ end $$;
 -- 내 상태: 점수, 순위, 현재 문항에서 고른 번호
 create or replace function public.my_status(p_id uuid)
 returns jsonb language sql stable security definer set search_path = public as $$
-  select jsonb_build_object('kicked', true) from banned where id = p_id
+  select jsonb_build_object('kicked', true, 'permanent', permanent) from banned where id = p_id
   union all
   (with ranked as (
     select id, nickname, score, correct_cnt, rank() over (order by score desc) as rnk
@@ -707,17 +717,35 @@ begin
 end $$;
 
 -- ---------- 내보내기(강퇴) ----------
-create or replace function public.host_kick(p_pin text, p_sid text)
+drop function if exists public.host_kick(text, text);
+create or replace function public.host_kick(p_pin text, p_sid text, p_permanent boolean default false)
 returns int language plpgsql security definer set search_path = public as $$
 declare n int;
 begin
   perform _check_pin(p_pin);
-  insert into banned (id) select id from players where left(id::text, 8) = p_sid on conflict do nothing;
+  insert into banned (id, permanent, nickname)
+    select id, coalesce(p_permanent, false), nickname from players where left(id::text, 8) = p_sid
+  on conflict (id) do update set permanent = excluded.permanent, nickname = excluded.nickname, created_at = now();
   delete from players where left(id::text, 8) = p_sid;      -- 표·기록·채팅도 함께 지워짐
   get diagnostics n = row_count;
   update game set spotlight = null where id = 1 and spotlight = p_sid;
   update game set kick_epoch = kick_epoch + 1, updated_at = now() where id = 1;   -- 스크린·폰이 바로 알아차리게
   return n;
+end $$;
+
+-- 추방한 사람 목록 · 풀기
+create or replace function public.host_list_banned(p_pin text)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  perform _check_pin(p_pin);
+  return coalesce((select jsonb_agg(jsonb_build_object('id', left(id::text, 8), 'n', nickname) order by created_at desc)
+                   from banned where permanent), '[]'::jsonb);
+end $$;
+create or replace function public.host_unban(p_pin text, p_sid text default null)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  perform _check_pin(p_pin);
+  delete from banned where permanent and (p_sid is null or left(id::text, 8) = p_sid);
 end $$;
 
 -- ---------- 화면 설정 · 스포트라이트 ----------
@@ -834,7 +862,7 @@ revoke execute on function
   public._check_pin(text),
   public._avatar(jsonb),
   public.server_now(),
-  public.join_game(uuid, text, jsonb),
+  public.join_game(uuid, text, jsonb, boolean),
   public.get_crowd(),
   public.send_feed(uuid, int, text),
   public.get_feed(bigint),
@@ -862,7 +890,7 @@ from public, anon, authenticated;
 
 grant execute on function
   public.server_now(),
-  public.join_game(uuid, text, jsonb),
+  public.join_game(uuid, text, jsonb, boolean),
   public.get_crowd(),
   public.send_feed(uuid, int, text),
   public.get_feed(bigint),
@@ -893,7 +921,9 @@ grant execute on function
   public.host_save_set(text, text, text, int, int),
   public.host_delete_set(text, int),
   public.host_delete_media(text, int),
-  public.host_kick(text, text),
+  public.host_kick(text, text, boolean),
+  public.host_list_banned(text),
+  public.host_unban(text, text),
   public.host_set_qr(text, boolean),
   public.get_media(int),
   public.host_goto(text, int),

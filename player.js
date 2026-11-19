@@ -1,6 +1,6 @@
-import { rpc, $, esc, jitter, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE } from './common.js?v=20261119f';
-import { GAMES, KIND_LABEL, kindOf, fmtPlay } from './questions-format.js?v=20261119f';
-import { avatarSVG, normAvatar, randomAvatar, PEOPLE, ACC_SLOTS, BAMTI, HAIR_COLORS } from './characters.js?v=20261119f';
+import { rpc, $, esc, jitter, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE } from './common.js?v=20261119g';
+import { GAMES, KIND_LABEL, kindOf, fmtPlay } from './questions-format.js?v=20261119g';
+import { avatarSVG, normAvatar, randomAvatar, PEOPLE, ACC_SLOTS, BAMTI, HAIR_COLORS } from './characters.js?v=20261119g';
 
 if (!configured) { showConfigError(); throw new Error('config.js not set'); }
 
@@ -111,7 +111,8 @@ function renderJoin(force = false) {
       updateSocial();
       lastKey = null; if (game) render(game);
     } catch (err) {
-      if (/KICKED/.test(err.message)) return showKicked();
+      if (/KICKED_OUT/.test(err.message)) return showKicked(false);
+      if (/KICKED/.test(err.message)) return showKicked(true);
       form.querySelector('.err').textContent = err.message;
       btn.disabled = false;
     }
@@ -121,18 +122,32 @@ function renderJoin(force = false) {
 async function rejoin() {
   if (!nick) return;
   try { await rpc('join_game', { p_id: myId, p_nickname: nick, p_avatar: avatar }); }
-  catch (err) { if (/KICKED/.test(err.message)) showKicked(); throw err; }
+  catch (err) { if (/KICKED/.test(err.message)) showKicked(!/KICKED_OUT/.test(err.message)); throw err; }
 }
 
 // ---------- 진행자가 내보낸 경우 ----------
-function showKicked() {
+function showKicked(permanent = true) {
   kicked = true;
   clearInterval(tick);
   $('#social')?.classList.add('hidden');
   $('#me')?.classList.add('hidden');
   document.body.classList.remove('has-chatlog');
-  view.innerHTML = `<div class="center kicked"><div class="kicked-mark" aria-hidden="true">🚪</div>
-    <h2>퇴장 처리되었어요</h2><p class="muted">진행자가 이 참가자를 내보냈어요.<br>잘못된 경우라면 진행자에게 말해 주세요.</p></div>`;
+  view.innerHTML = permanent
+    ? `<div class="center kicked"><div class="kicked-mark" aria-hidden="true">🚫</div>
+        <h2>참여가 막혔어요</h2><p class="muted">진행자가 이 폰의 참여를 막았어요.<br>잘못된 경우라면 진행자에게 말해 주세요.</p></div>`
+    : `<div class="center kicked"><div class="kicked-mark" aria-hidden="true">🚪</div>
+        <h2>퇴장 처리되었어요</h2><p class="muted">진행자가 내보냈어요. 점수와 기록은 지워졌어요.<br>다시 참여하려면 아래 버튼을 눌러 주세요.</p>
+        <button class="btn" id="rejoin-btn" type="button">다시 들어가기</button></div>`;
+  $('#rejoin-btn')?.addEventListener('click', async e => {
+    e.target.disabled = true;
+    try {
+      await rpc('join_game', { p_id: myId, p_nickname: nick || store.get('qs.lastnick') || '참가자', p_avatar: avatar, p_again: true });
+      location.reload();
+    } catch (err) {
+      if (/KICKED/.test(err.message) && !/KICKED_OUT/.test(err.message)) return showKicked(true);
+      e.target.disabled = false; alert(err.message);
+    }
+  });
 }
 async function checkKicked() {
   try { await myStatus(); } catch {}
@@ -140,7 +155,7 @@ async function checkKicked() {
 // 내 상태 가져오기. 내보내진 상태면 퇴장 화면을 띄우고 멈춤
 async function myStatus() {
   const st = await rpc('my_status', { p_id: myId });
-  if (st?.kicked) { showKicked(); throw new Error('KICKED'); }
+  if (st?.kicked) { showKicked(!!st.permanent); throw new Error('KICKED'); }
   return st;
 }
 

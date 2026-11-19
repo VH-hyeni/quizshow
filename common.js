@@ -1,5 +1,5 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-import { SUPABASE_URL, SUPABASE_KEY, TITLE } from './config.js?v=20261119f';
+import { SUPABASE_URL, SUPABASE_KEY, TITLE } from './config.js?v=20261119g';
 
 export { TITLE };
 // 주소 끝의 '/', '/rest/v1' 같은 꼬리나 'NEXT_PUBLIC_..=' 같은 앞부분이 같이 복사돼도 바로잡음
