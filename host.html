@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>진행자</title>
-  <link rel="stylesheet" href="style.css?v=20261119b">
+  <link rel="stylesheet" href="style.css?v=20261119f">
 </head>
 <body class="host">
   <!-- 로그인 -->
@@ -57,11 +57,12 @@
             <button class="btn ghost sm" data-act="end" type="button">최종 결과</button>
           </div>
           <div class="qgroup">
-            <span class="qlabel">정답 공개</span>
-            <div class="seg" role="radiogroup" aria-label="정답 공개 방식">
+            <span class="qlabel">정답 공개<br><small class="muted">기본값</small></span>
+            <div class="seg" role="radiogroup" aria-label="정답 공개 기본 방식">
               <label><input type="radio" name="auto-reveal" value="0"><span>수동 (버튼 눌러 공개)</span></label>
               <label><input type="radio" name="auto-reveal" value="1"><span>자동 (시간 끝나면 바로)</span></label>
             </div>
+            <span class="rv-note" id="rv-note"></span>
           </div>
           <div class="qgroup">
             <span class="qlabel">입장 QR</span>
@@ -94,6 +95,15 @@
           <ul class="qlist" id="qlist"><li class="muted">문항을 아래에서 올려 주세요</li></ul>
 
           <h2>문항 편집</h2>
+          <div class="set-bar">
+            <label class="set-pick">문제셋
+              <select id="set-pick" aria-label="문제셋 고르기"><option value="">새 문제셋</option></select>
+            </label>
+            <input id="set-name" maxlength="40" placeholder="문제셋 이름 (예: 송년회 1부)" aria-label="문제셋 이름">
+            <button class="btn ghost sm" id="set-save" type="button">💾 문제셋 저장</button>
+            <button class="btn ghost sm" id="set-new" type="button">새로 만들기</button>
+            <button class="btn ghost sm set-del" id="set-del" type="button">삭제</button>
+          </div>
           <div class="tpl-row">
             <span class="muted">틀 추가</span>
             <button class="btn ghost sm" type="button" data-tpl="quiz">정답 퀴즈</button>
@@ -115,14 +125,17 @@
             <code>S:</code> 발표(칠판) — 다음 줄부터 설명을 한 줄씩, <code>-</code> 로 시작하면 글머리표 · <code>이미지: #1</code> 은 '🖼 이미지 넣기'로 올린 그림<br>
             <code>G: 숫자순서</code> / <code>G: 반응속도</code> / <code>G: 광클</code> — 미니게임<br>
             <code>T: 20</code> 제한시간(초) · 광클은 누르는 시간 · <code>크기: 4</code> 숫자순서 판 크기(4 = 1~16)<br>
+            <code>정답공개: 자동</code> / <code>정답공개: 수동</code> 이 문항만 정답 공개 방식 따로 (안 쓰면 기본값)<br>
             <code>공개: 실시간</code> 고르는 즉시 아바타 이동 · <code>공개: 정답때</code> 정답 공개 때 · <code>공개: 비공개</code> 끝까지 비밀(인원수만)
           </details>
           <textarea id="editor" spellcheck="false"></textarea>
           <div class="row" style="margin-top:10px">
-            <button class="btn secondary" id="upload" type="button">문항 저장</button>
-            <button class="btn ghost" id="load-server" type="button">저장된 문항 불러오기</button>
+            <button class="btn secondary" id="upload" type="button">▶ 이 문항으로 진행하기</button>
+            <button class="btn ghost" id="load-server" type="button">진행 중인 문항 가져오기</button>
             <button class="btn ghost" id="sample" type="button">예시 넣기</button>
           </div>
+          <p class="muted set-help"><b>💾 문제셋 저장</b>은 편집기 내용을 이름 붙여 보관만 해요 (스크린엔 영향 없음).
+            <b>▶ 이 문항으로 진행하기</b>를 눌러야 위 문항 목록과 스크린에 반영돼요.</p>
           <div class="msg" id="edit-msg"></div>
         </div>
 
@@ -198,6 +211,6 @@
       </div>
     </div>
   </div>
-  <script type="module" src="host.js?v=20261119b"></script>
+  <script type="module" src="host.js?v=20261119f"></script>
 </body>
 </html>

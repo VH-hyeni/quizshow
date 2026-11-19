@@ -1,5 +1,5 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-import { SUPABASE_URL, SUPABASE_KEY, TITLE } from './config.js?v=20261119b';
+import { SUPABASE_URL, SUPABASE_KEY, TITLE } from './config.js?v=20261119f';
 
 export { TITLE };
 // 주소 끝의 '/', '/rest/v1' 같은 꼬리나 'NEXT_PUBLIC_..=' 같은 앞부분이 같이 복사돼도 바로잡음
@@ -70,12 +70,17 @@ export function remainingSec(game) {
   return Math.max(0, Math.ceil((end - serverNow()) / 1000));
 }
 
-// game 행을 실시간 구독. 연결이 끊겨도 주기적으로 다시 읽어 와서 화면이 멈추지 않게 함
-// 내가 진행 버튼을 누른 직후엔 실시간 알림을 기다리지 않고 바로 새 상태를 가져와요
+// game 상태 따라가기
+// - 스크린·진행자(몇 대뿐): 실시간 구독 + 2초마다 '바뀌었나?'만 가볍게 확인
+// - 참가자 폰(100대): 실시간 구독을 쓰지 않고 1초 남짓마다 '바뀌었나?'(updated_at 한 칸)만 확인 → 바뀌었을 때만 전체를 받아요.
+//   Supabase 무료 요금제는 실시간 메시지가 초당 100개로 제한돼서, 100대가 구독하면 진행 버튼 한 번에
+//   한도를 넘겨 스크린까지 늦어질 수 있어요. 폰을 빼면 실시간은 스크린·진행자 전용이 돼서 안정적이에요.
 export let refreshGame = () => {};
-export function watchGame(onChange, onConn = () => {}) {
+export function watchGame(onChange, onConn = () => {}, { realtime = true, pollMs = 2000 } = {}) {
   let last = null;
   let lastT = -Infinity;
+  let ok = null;
+  const setOk = v => { if (v !== ok) { ok = v; onConn(v); } };
   const apply = row => {
     if (!row) return;
     const t = parseTs(row.updated_at);
@@ -84,29 +89,38 @@ export function watchGame(onChange, onConn = () => {}) {
     last = row; lastT = t;
     if (changed) onChange(row);
   };
+  let busy = false;
   const fetchNow = async () => {
     const { data, error } = await sb.from('game').select('*').eq('id', 1).single();
-    if (!error) apply(data);
+    if (error) { setOk(false); return; }
+    setOk(true); apply(data);
+  };
+  // 가벼운 확인: updated_at 한 칸만 받아서 바뀌었으면 전체를 받음
+  const check = async () => {
+    if (busy) return;
+    busy = true;
+    try {
+      const { data, error } = await sb.from('game').select('updated_at').eq('id', 1).single();
+      if (error) { setOk(false); return; }
+      setOk(true);
+      if (parseTs(data.updated_at) > lastT) await fetchNow();
+    } catch { setOk(false); } finally { busy = false; }
   };
   refreshGame = () => fetchNow().catch(() => {});
-  // 실시간 연결이 살아 있으면 가끔(15~25초)만 확인, 끊겼으면 자주(3~5초) 확인
-  let live = false, timer = null;
+  let timer = null;
   const schedule = () => {
     clearTimeout(timer);
-    const wait = live ? 15000 + Math.random() * 10000 : 3000 + Math.random() * 2000;
-    timer = setTimeout(async () => { if (!document.hidden) await fetchNow().catch(() => {}); schedule(); }, wait);
+    const wait = pollMs * (0.8 + Math.random() * 0.4) * (ok === false ? 2 : 1);
+    timer = setTimeout(async () => { if (!document.hidden) await check(); schedule(); }, wait);
   };
-  sb.channel('game-state')
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game' }, p => apply(p.new))
-    .subscribe(status => {
-      live = status === 'SUBSCRIBED';
-      onConn(live);
-      if (live) fetchNow();
-      schedule();
-    });
-  fetchNow();
+  if (realtime) {
+    sb.channel('game-state')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game' }, p => apply(p.new))
+      .subscribe(status => { if (status === 'SUBSCRIBED') fetchNow().catch(() => {}); });
+  }
+  fetchNow().catch(() => setOk(false));
   schedule();
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) fetchNow(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) fetchNow().catch(() => {}); });
   return { refresh: fetchNow, get: () => last };
 }
 

@@ -1,6 +1,6 @@
-import { rpc, $, esc, jitter, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE } from './common.js?v=20261119b';
-import { GAMES, KIND_LABEL, kindOf, fmtPlay } from './questions-format.js?v=20261119b';
-import { avatarSVG, normAvatar, randomAvatar, PEOPLE, ACC_SLOTS, BAMTI, HAIR_COLORS } from './characters.js?v=20261119b';
+import { rpc, $, esc, jitter, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE } from './common.js?v=20261119f';
+import { GAMES, KIND_LABEL, kindOf, fmtPlay } from './questions-format.js?v=20261119f';
+import { avatarSVG, normAvatar, randomAvatar, PEOPLE, ACC_SLOTS, BAMTI, HAIR_COLORS } from './characters.js?v=20261119f';
 
 if (!configured) { showConfigError(); throw new Error('config.js not set'); }
 
@@ -605,4 +605,4 @@ if (!nick) renderJoin();
 else rejoin().catch(() => {});
 syncClock();
 if (nick) checkKicked();
-watchGame(render, on => $('#conn').classList.toggle('on', on));
+watchGame(render, on => $('#conn').classList.toggle('on', on), { realtime: false, pollMs: 1200 });

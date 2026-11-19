@@ -1,4 +1,4 @@
-@import url('tokens.css?v=20261119b');
+@import url('tokens.css?v=20261119f');
 
 /* =====================================================================
    컴포넌트 — 색/크기는 tokens.css 변수만 사용
@@ -1157,3 +1157,35 @@ body.player {
 .player header .me #me-name { overflow: hidden; text-overflow: ellipsis; max-width: 30vw; }
 .player header .me button { white-space: nowrap; font-size: 13px !important; padding: 5px 10px; }
 .player .btn, .player button { word-break: keep-all; }
+
+/* 진행자: 문제셋 */
+.host .set-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 12px; margin-bottom: var(--sp-3);
+  border: 1px solid var(--hair, var(--line)); border-radius: 12px; background: rgba(255, 201, 60, .04); }
+.host .set-pick { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--accent); }
+.host .set-pick select, .host #set-name { background: #0B0C11; color: var(--text); border: 1px solid var(--hair, var(--line)); border-radius: 9px; padding: 6px 9px; font: inherit; font-weight: 600; font-size: 13px; }
+.host .set-pick select { max-width: 220px; }
+.host #set-name { flex: 1; min-width: 110px; }
+.host .set-bar .btn { padding: 6px 10px; font-size: 13px; }
+.host .set-bar .set-del:hover:not(:disabled) { color: var(--crimson-text); border-color: var(--primary); }
+.host .set-help { font-size: 12.5px; margin: 8px 0 0; line-height: 1.6; }
+
+/* 진행자: 문항 순서 바꾸기 */
+.host .qlist li { position: relative; }
+.host .qlist .grip { cursor: grab; color: var(--text-off); font-size: 16px; padding: 0 2px; user-select: none; }
+.host .qlist li.dragging { opacity: .4; }
+.host .qlist li.drop-before { box-shadow: inset 0 3px 0 var(--accent); }
+.host .qlist li.drop-after { box-shadow: inset 0 -3px 0 var(--accent); }
+.host .qlist .mv { display: inline-flex; gap: 2px; }
+.host .qlist .mvb { width: 26px; height: 26px; border-radius: 7px; border: 1px solid var(--hair, var(--line)); background: transparent; color: var(--text-sub); font-size: 10px; cursor: pointer; }
+.host .qlist .mvb:hover:not(:disabled) { color: var(--text); border-color: var(--hair-hi, var(--line)); }
+.host .qlist .mvb:disabled { opacity: .25; cursor: default; }
+
+/* 문항별 정답 공개 */
+.host .qlist button.tag.rv { cursor: pointer; font: inherit; font-size: 11px; font-weight: 600; background: transparent; }
+.host .qlist .tag.rv-def { color: var(--text-off) !important; border-style: dashed; }
+.host .qlist .tag.rv-auto { color: var(--accent) !important; border-color: rgba(255, 201, 60, .5); }
+.host .qlist .tag.rv-manual { color: #8FC7FF !important; border-color: rgba(143, 199, 255, .5); }
+.host .qlist .tag.rv:hover { border-color: var(--text-sub); }
+.host .rv-note { flex-basis: 100%; font-size: 12.5px; color: var(--accent); }
+.host .rv-note:empty { display: none; }
+.host .qlabel small { font-weight: 500; font-size: 11px; }

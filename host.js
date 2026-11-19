@@ -1,7 +1,7 @@
-import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, LABELS, TITLE, joinUrl } from './common.js?v=20261119b';
-import { parseQuestions, toText, SAMPLE, TEMPLATES, KIND_LABEL, kindOf, GAMES, fmtPlay, showOf, SHOW_LABEL } from './questions-format.js?v=20261119b';
-import { nextAction as flowNext, prevAction, hostActions, PHASE_NAME } from './flow.js?v=20261119b';
-import { avatarSVG } from './characters.js?v=20261119b';
+import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, LABELS, TITLE, joinUrl } from './common.js?v=20261119f';
+import { parseQuestions, toText, SAMPLE, TEMPLATES, KIND_LABEL, kindOf, GAMES, fmtPlay, showOf, SHOW_LABEL, revealOf } from './questions-format.js?v=20261119f';
+import { nextAction as flowNext, prevAction, hostActions, PHASE_NAME } from './flow.js?v=20261119f';
+import { avatarSVG } from './characters.js?v=20261119f';
 
 if (!configured) { showConfigError(); throw new Error('config.js not set'); }
 
@@ -44,7 +44,7 @@ function start(qs) {
   if (started) return;
   started = true;
   questions = qs || [];
-  loadGallery();
+  loadGallery(); loadSets();
   $('#login').classList.add('hidden');
   $('#app').classList.remove('hidden');
   $('#link-screen').href = new URL('screen.html', location.href).href;
@@ -101,23 +101,99 @@ $('#upload').addEventListener('click', async () => {
   try {
     const n = await rpc('host_load_questions', { p_pin: pin, p_questions: qs });
     questions = qs;
+    // 이름이 있으면 문제셋에도 같이 저장
+    const name = $('#set-name').value.trim();
+    if (name) { try { await saveSet(true); } catch {} store.set('qs.liveSet', name); }
+    else store.set('qs.liveSet', '');
     renderQList(); updateControls();
-    msg($('#edit-msg'), `✔ ${n}개 문항을 저장했습니다.`, 'ok');
+    msg($('#edit-msg'), `✔ ${name ? `'${name}' ` : ''}${n}개 문항으로 진행할 준비가 됐어요.`, 'ok');
   } catch (err) { msg($('#edit-msg'), err.message, 'err'); }
 });
 
 function renderQList() {
-  $('#qcount').textContent = questions.length ? `(${questions.length}개)` : '';
+  const live = store.get('qs.liveSet');
+  $('#qcount').textContent = questions.length ? `${live ? `· ${live} ` : ''}(${questions.length}개)` : '';
   if (!questions.length) { $('#qlist').innerHTML = '<li class="muted">문항을 아래에서 올려 주세요</li>'; return; }
   $('#qlist').innerHTML = questions.map((q, i) => `
-    <li class="${game && game.q_index === i ? 'cur' : ''}">
+    <li class="${game && game.q_index === i ? 'cur' : ''}" draggable="true" data-i="${i}">
+      <span class="grip" title="끌어서 순서 바꾸기" aria-hidden="true">⠿</span>
       <span class="num">${i + 1}</span>
       <span class="t" title="${esc(q.text)}">${esc(q.text)}</span>
       <span class="tag k-${kindOf(q)}">${q.full ? "장표" : KIND_LABEL[kindOf(q)]}${kindOf(q) === 'quiz' ? ` · 정답 ${LABELS[q.answer]}` : kindOf(q) === 'ox' ? ` · ${q.answer === 0 ? 'O' : 'X'}` : ''}</span>
-      ${q.kind !== 'game' && q.kind !== 'slide' ? `<span class="tag k-show">${SHOW_LABEL[showOf(q)]}</span>` : ''}${q.image ? '<span class="tag k-show">🖼</span>' : ''}
+      ${q.kind !== 'game' && q.kind !== 'slide' ? `<span class="tag k-show">${SHOW_LABEL[showOf(q)]}</span>
+        <button class="tag rv rv-${q.reveal || 'def'}" type="button" data-rv="${i}" title="이 문항의 정답 공개 방식 (눌러서 바꾸기)">${q.reveal === 'auto' ? '⚡ 자동 공개' : q.reveal === 'manual' ? '✋ 수동 공개' : `기본 (${game?.auto_reveal ? '자동' : '수동'})`}</button>` : ''}${q.image ? '<span class="tag k-show">🖼</span>' : ''}
+      <span class="mv">
+        <button class="mvb" type="button" data-mv="-1" data-at="${i}" ${i === 0 ? 'disabled' : ''} aria-label="${i + 1}번 위로">▲</button>
+        <button class="mvb" type="button" data-mv="1" data-at="${i}" ${i === questions.length - 1 ? 'disabled' : ''} aria-label="${i + 1}번 아래로">▼</button>
+      </span>
       <button class="btn ghost sm" type="button" data-start="${i}">시작</button>
     </li>`).join('');
 }
+
+// ---------- 문항 순서 바꾸기 (▲▼ 버튼 또는 끌어서 놓기) ----------
+async function moveQuestion(from, to) {
+  if (from === to || to < 0 || to >= questions.length) return;
+  if (game && ['question', 'closed'].includes(game.phase))
+    return msg($('#edit-msg'), '문항이 진행 중일 땐 순서를 바꿀 수 없어요. 결과 공개 후나 대기 화면에서 바꿔 주세요.', 'err');
+  if (game && game.phase !== 'lobby' && !moveOk) {
+    if (!confirm('이미 진행한 문항이 있어요. 순서를 바꾸면 이전/다음 이동 때 지난 결과가 다른 번호로 보일 수 있어요. 그래도 바꿀까요?')) return;
+    moveOk = true;
+  }
+  const next = questions.slice(); const [q] = next.splice(from, 1); next.splice(to, 0, q);
+  applyQuestions(next, `✔ ${from + 1}번 → ${to + 1}번으로 옮겼어요.`);
+}
+// 바뀐 문항 목록을 진행 목록·편집기·(같은 이름이면) 문제셋에 반영
+async function applyQuestions(next, okText) {
+  try {
+    await rpc('host_load_questions', { p_pin: pin, p_questions: next });
+    questions = next;
+    const body = toText(questions);
+    $('#editor').value = body; store.set('qs.editor', body);
+    if (store.get('qs.liveSet') && $('#set-name').value.trim() === store.get('qs.liveSet')) { try { await saveSet(true); } catch {} }
+    renderQList(); updateControls();
+    msg($('#edit-msg'), okText, 'ok');
+  } catch (err) { msg($('#edit-msg'), err.message, 'err'); }
+}
+// 문항별 정답 공개: 기본 → 자동 → 수동 → 기본
+$('#qlist').addEventListener('click', e => {
+  const b = e.target.closest('[data-rv]'); if (!b) return;
+  const i = Number(b.dataset.rv);
+  if (game && game.q_index === i && ['question', 'closed'].includes(game.phase))
+    return msg($('#edit-msg'), '진행 중인 문항은 공개 방식을 바꿀 수 없어요. 아래 "정답 공개" 버튼으로 바로 공개하면 돼요.', 'err');
+  const order = [undefined, 'auto', 'manual'];
+  const cur = questions[i].reveal;
+  const nv = order[(order.indexOf(cur) + 1) % 3];
+  const next = questions.map((q, k) => { if (k !== i) return q; const c = { ...q }; if (nv) c.reveal = nv; else delete c.reveal; return c; });
+  applyQuestions(next, `✔ ${i + 1}번 정답 공개: ${nv === 'auto' ? '자동' : nv === 'manual' ? '수동' : '기본 설정 따름'}`);
+});
+let moveOk = false, dragFrom = null;
+$('#qlist').addEventListener('click', e => {
+  const b = e.target.closest('[data-mv]'); if (!b) return;
+  const i = Number(b.dataset.at); moveQuestion(i, i + Number(b.dataset.mv));
+});
+$('#qlist').addEventListener('dragstart', e => {
+  const li = e.target.closest('li[data-i]'); if (!li) return;
+  dragFrom = Number(li.dataset.i); li.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(dragFrom));
+});
+$('#qlist').addEventListener('dragover', e => {
+  const li = e.target.closest('li[data-i]'); if (!li || dragFrom === null) return;
+  e.preventDefault();
+  const r = li.getBoundingClientRect(), after = e.clientY > r.top + r.height / 2;
+  $('#qlist').querySelectorAll('.drop-before,.drop-after').forEach(x => x.classList.remove('drop-before', 'drop-after'));
+  li.classList.add(after ? 'drop-after' : 'drop-before');
+});
+$('#qlist').addEventListener('drop', e => {
+  const li = e.target.closest('li[data-i]'); if (!li || dragFrom === null) return;
+  e.preventDefault();
+  const over = Number(li.dataset.i), after = li.classList.contains('drop-after');
+  let to = over + (after ? 1 : 0); if (dragFrom < to) to -= 1;
+  const from = dragFrom; dragFrom = null; moveQuestion(from, to);
+});
+$('#qlist').addEventListener('dragend', () => {
+  dragFrom = null;
+  $('#qlist').querySelectorAll('.dragging,.drop-before,.drop-after').forEach(x => x.classList.remove('dragging', 'drop-before', 'drop-after'));
+});
 
 $('#qlist').addEventListener('click', e => {
   const b = e.target.closest('[data-start]');
@@ -179,6 +255,65 @@ function updateControls() {
 
 $('#next').addEventListener('click', () => nextAction().run?.());
 $('#prev').addEventListener('click', () => prevAction(game, A).run?.());
+
+// ---------- 문제셋 (프로그램별 문항 보관) ----------
+let sets = [], setId = Number(store.get('qs.setId')) || null, setSaved = null;
+const setDirty = () => setSaved !== null && $('#editor').value !== setSaved;
+async function loadSets() {
+  if (!pin) return;
+  try { sets = await rpc('host_list_sets', { p_pin: pin }) || []; } catch { return; }
+  if (setId && !sets.some(x => x.id === setId)) setId = null;
+  renderSets();
+}
+function renderSets() {
+  $('#set-pick').innerHTML = '<option value="">새 문제셋</option>' + sets.map(x =>
+    `<option value="${x.id}">${esc(x.name)} (${x.count}문항)</option>`).join('');
+  $('#set-pick').value = setId || '';
+  const cur = sets.find(x => x.id === setId);
+  if (cur && document.activeElement !== $('#set-name')) $('#set-name').value = cur.name;
+  $('#set-del').disabled = !setId;
+}
+async function saveSet(quiet = false) {
+  const name = $('#set-name').value.trim();
+  if (!name) { $('#set-name').focus(); throw new Error('문제셋 이름을 적어 주세요. (예: 송년회 1부)'); }
+  const body = $('#editor').value;
+  let count = 0; try { count = parseQuestions(body).length; } catch {}
+  const cur = sets.find(x => x.id === setId);
+  const id = await rpc('host_save_set', { p_pin: pin, p_name: name, p_body: body, p_count: count, p_id: cur && cur.name === name ? setId : null });   // 이름을 바꿔 저장하면 새 문제셋(복사본)
+  setId = id; store.set('qs.setId', id); setSaved = body;
+  await loadSets();
+  if (!quiet) msg($('#edit-msg'), `✔ 문제셋 '${name}'에 저장했어요. (${count}문항) 진행하려면 "▶ 이 문항으로 진행하기"를 눌러 주세요.`, 'ok');
+}
+$('#set-save').addEventListener('click', () => saveSet().catch(err => msg($('#edit-msg'), err.message, 'err')));
+$('#set-pick').addEventListener('change', async e => {
+  const id = Number(e.target.value) || null;
+  if (setDirty() && !confirm('편집기에 저장 안 한 내용이 있어요. 그래도 다른 문제셋을 열까요?')) { e.target.value = setId || ''; return; }
+  if (!id) { newSet(); return; }
+  try {
+    const st = await rpc('host_get_set', { p_pin: pin, p_id: id });
+    setId = id; store.set('qs.setId', id);
+    $('#editor').value = st.body; store.set('qs.editor', st.body); setSaved = st.body;
+    $('#set-name').value = st.name; renderSets();
+    msg($('#edit-msg'), `'${st.name}' 문제셋을 열었어요. 진행하려면 "▶ 이 문항으로 진행하기"를 눌러 주세요.`, 'ok');
+  } catch (err) { msg($('#edit-msg'), err.message, 'err'); }
+});
+function newSet() {
+  setId = null; store.set('qs.setId', ''); setSaved = '';
+  $('#set-name').value = ''; $('#editor').value = ''; store.set('qs.editor', '');
+  renderSets(); $('#set-name').focus();
+  msg($('#edit-msg'), '새 문제셋이에요. 이름을 적고 문항을 쓴 다음 "💾 문제셋 저장"을 눌러 주세요.', 'ok');
+}
+$('#set-new').addEventListener('click', () => {
+  if (setDirty() && !confirm('편집기에 저장 안 한 내용이 있어요. 그래도 새로 만들까요?')) return;
+  newSet();
+});
+$('#set-del').addEventListener('click', async () => {
+  const cur = sets.find(x => x.id === setId); if (!cur) return;
+  if (!confirm(`'${cur.name}' 문제셋을 지울까요? (지금 진행 중인 문항 목록은 그대로예요)`)) return;
+  try { await rpc('host_delete_set', { p_pin: pin, p_id: cur.id }); setId = null; store.set('qs.setId', ''); setSaved = null; await loadSets(); $('#set-name').value = '';
+    msg($('#edit-msg'), `'${cur.name}' 문제셋을 지웠어요.`, 'ok'); }
+  catch (err) { msg($('#edit-msg'), err.message, 'err'); }
+});
 
 // ---------- 이미지 올리기 · 갤러리 · PPT 장표 ----------
 // 그림을 긴 쪽 maxSide 이하로 줄여 data URL 로 (webp, 안 되면 jpeg). 너무 크면 품질을 낮춰 다시
@@ -390,7 +525,7 @@ function onGame() {
   if (g.phase !== 'question') { clearTimeout(closeTimer); closeTimer = null; }
   syncSettings(g);
   // 자동 정답 공개: 마감되면 1.2초 뒤 공개
-  if (g.phase === 'closed' && g.auto_reveal && g.question?.kind !== 'slide' && revealKey !== g.started_at) {
+  if (g.phase === 'closed' && revealOf(g.question, g) && g.question?.kind !== 'slide' && revealKey !== g.started_at) {
     revealKey = g.started_at;
     const key = g.started_at;
     setTimeout(() => { if (game.phase === 'closed' && game.started_at === key) A.reveal(); }, 1200);
@@ -517,6 +652,9 @@ try { const t = localStorage.getItem('qs.hosttab'); if (t) document.querySelecto
 function syncSettings(g) {
   syncQr(g);
   document.querySelectorAll('input[name="auto-reveal"]').forEach(r => { r.checked = (r.value === '1') === !!g.auto_reveal; });
+  const rv = g.question?.reveal, note = $('#rv-note');
+  if (note) note.textContent = rv && g.q_index >= 0 && g.question?.kind !== 'slide' && g.question?.kind !== 'game'
+    ? `지금 문항은 따로 ${rv === 'auto' ? '⚡ 자동' : '✋ 수동'} 공개로 정해져 있어요` : '';
   const t = $('#lobby-title'), sub = $('#lobby-sub');
   if (document.activeElement !== t && !t.dataset.dirty) t.value = g.lobby_title || '';
   if (document.activeElement !== sub && !sub.dataset.dirty) sub.value = g.lobby_sub || '';

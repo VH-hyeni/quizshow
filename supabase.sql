@@ -62,6 +62,17 @@ alter table public.media enable row level security;
 alter table public.media add column if not exists thumb text;     -- 갤러리용 작은 그림
 alter table public.media add column if not exists name  text;     -- 올린 파일 이름
 
+-- 문제셋: 프로그램별로 문항을 따로 보관 (편집기 글 그대로)
+create table if not exists public.qsets (
+  id          serial primary key,
+  name        text not null unique,
+  body        text not null default '',
+  count       int  not null default 0,
+  updated_at  timestamptz not null default now()
+);
+alter table public.qsets enable row level security;
+revoke all on public.qsets from anon, authenticated;
+
 -- 진행자가 내보낸 참가자 (같은 폰으로는 다시 못 들어옴. 전체 초기화하면 풀림)
 create table if not exists public.banned (
   id          uuid primary key,
@@ -583,6 +594,7 @@ begin
                    'ox',         coalesce((q ->> 'ox')::boolean, false),
                    -- 누가 뭘 골랐는지: live = 고르는 즉시 공개 · reveal = 정답 공개 때 · hidden = 끝까지 비공개(인원수만)
                    'show',       coalesce(q ->> 'show', case when kind = 'poll' then 'live' else 'reveal' end),
+                   'reveal',     q ->> 'reveal',       -- 이 문항만 정답 공개 방식: auto / manual / 없으면 기본 설정
                    'time_limit', coalesce((q ->> 'time_limit')::int, case when kind = 'poll' then 0 else 20 end)) end,
     correct    = null,
     started_at = now(),
@@ -642,6 +654,48 @@ begin
   if not p_keep_players then delete from players where true; delete from banned where true; end if;
   update game set phase = 'lobby', q_index = -1, question = null, correct = null,
                   started_at = null, chat_epoch = chat_epoch + 1, spotlight = null, show_qr = false, updated_at = now() where id = 1;
+end $$;
+
+-- ---------- 문제셋 (프로그램별 문항 보관) ----------
+create or replace function public.host_list_sets(p_pin text)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  perform _check_pin(p_pin);
+  return coalesce((select jsonb_agg(jsonb_build_object('id', id, 'name', name, 'count', count, 'at', updated_at)
+                                    order by updated_at desc) from qsets), '[]'::jsonb);
+end $$;
+
+create or replace function public.host_get_set(p_pin text, p_id int)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  perform _check_pin(p_pin);
+  return (select jsonb_build_object('id', id, 'name', name, 'body', body, 'count', count) from qsets where id = p_id);
+end $$;
+
+-- 이름이 같으면 덮어쓰고, 없으면 새로 만듦. p_id 를 주면 그 셋을 (이름 바꿔서라도) 고침
+create or replace function public.host_save_set(p_pin text, p_name text, p_body text, p_count int, p_id int default null)
+returns int language plpgsql security definer set search_path = public as $$
+declare v int; n text := left(btrim(coalesce(p_name, '')), 40);
+begin
+  perform _check_pin(p_pin);
+  if n = '' then raise exception '문제셋 이름을 적어 주세요.'; end if;
+  if length(p_body) > 200000 then raise exception '문제셋이 너무 길어요.'; end if;
+  if p_id is not null then
+    if exists (select 1 from qsets where name = n and id <> p_id) then raise exception '같은 이름의 문제셋이 이미 있어요: %', n; end if;
+    update qsets set name = n, body = p_body, count = coalesce(p_count, 0), updated_at = now() where id = p_id returning id into v;
+    if v is not null then return v; end if;
+  end if;
+  insert into qsets (name, body, count) values (n, p_body, coalesce(p_count, 0))
+  on conflict (name) do update set body = excluded.body, count = excluded.count, updated_at = now()
+  returning id into v;
+  return v;
+end $$;
+
+create or replace function public.host_delete_set(p_pin text, p_id int)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  perform _check_pin(p_pin);
+  delete from qsets where id = p_id;
 end $$;
 
 -- ---------- 입장 QR 팝업 ----------
@@ -768,6 +822,7 @@ begin
                else jsonb_build_object('text', q -> 'text', 'options', q -> 'options', 'kind', kind,
                    'ox', coalesce((q ->> 'ox')::boolean, false),
                    'show', coalesce(q ->> 'show', case when kind = 'poll' then 'live' else 'reveal' end),
+                   'reveal', q ->> 'reveal',
                    'time_limit', 0) end,
     updated_at = now()
   where id = 1;
@@ -833,6 +888,10 @@ grant execute on function
   public.host_reset(text, boolean),
   public.host_put_media(text, text, text, text),
   public.host_list_media(text),
+  public.host_list_sets(text),
+  public.host_get_set(text, int),
+  public.host_save_set(text, text, text, int, int),
+  public.host_delete_set(text, int),
   public.host_delete_media(text, int),
   public.host_kick(text, text),
   public.host_set_qr(text, boolean),

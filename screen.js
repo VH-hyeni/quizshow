@@ -1,8 +1,8 @@
-import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE, joinUrl } from './common.js?v=20261119b';
-import { GAMES, KIND_LABEL, kindOf, fmtPlay, showOf, SHOW_LABEL } from './questions-format.js?v=20261119b';
-import { nextAction, prevAction, revealAction, hostActions } from './flow.js?v=20261119b';
-import { sound, sfx, bgm } from './sound.js?v=20261119b';
-import { avatarSVG, mascotSVG } from './characters.js?v=20261119b';
+import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE, joinUrl } from './common.js?v=20261119f';
+import { GAMES, KIND_LABEL, kindOf, fmtPlay, showOf, SHOW_LABEL, revealOf } from './questions-format.js?v=20261119f';
+import { nextAction, prevAction, revealAction, hostActions } from './flow.js?v=20261119f';
+import { sound, sfx, bgm } from './sound.js?v=20261119f';
+import { avatarSVG, mascotSVG } from './characters.js?v=20261119f';
 
 if (!configured) { showConfigError(); throw new Error('config.js not set'); }
 
@@ -231,7 +231,7 @@ function placeSpot() {
 let autoCloseKey = null, autoRevealKey = null;
 function autoFlow(g) {
   if (!ctrlPin || !g) return;
-  if (g.phase === 'closed' && g.auto_reveal && g.question?.kind !== 'slide' && autoRevealKey !== g.started_at) {
+  if (g.phase === 'closed' && revealOf(g.question, g) && g.question?.kind !== 'slide' && autoRevealKey !== g.started_at) {
     autoRevealKey = g.started_at;
     const key = g.started_at;
     setTimeout(() => { if (game.phase === 'closed' && game.started_at === key) ctrlA.reveal(); }, 1600);

@@ -15,6 +15,8 @@
 //
 //   공개: 실시간                ← (선택) 누가 뭘 골랐는지 보여 주는 방식
 //                                 실시간 = 고르는 즉시 · 정답때 = 정답 공개 때 · 비공개 = 끝까지 안 보임(인원수만)
+//   정답공개: 수동              ← (선택) 이 문항만 정답 공개 방식 따로: 자동(시간 끝나면 바로) / 수동(버튼 눌러 공개)
+//                                 안 쓰면 진행자 화면의 기본 설정을 따라요
 //                                 생략하면 퀴즈는 정답때, 투표는 실시간
 //
 //   G: 숫자순서                 ← 미니게임: 숫자순서 / 반응속도 / 광클
@@ -36,6 +38,7 @@ export const GAMES = {
 
 export const KIND_LABEL = { quiz: '정답 퀴즈', ox: 'OX 퀴즈', poll: '투표', game: '미니게임', slide: '발표' };
 export const SHOW_LABEL = { live: '실시간 공개', reveal: '정답 때 공개', hidden: '비공개' };
+export const revealOf = (q, g) => (q?.reveal ? q.reveal === 'auto' : !!g?.auto_reveal);
 export const showOf = q => q.show || (q.kind === 'poll' ? 'live' : 'reveal');
 const SHOW_WORDS = { live: ['실시간', '바로', '즉시', 'live'], reveal: ['정답때', '정답', '나중', '공개때', 'reveal'], hidden: ['비공개', '익명', '숨김', 'hidden'] };
 export const kindOf = q => (q.kind === 'slide' ? 'slide' : q.kind === 'game' ? 'game' : q.kind === 'poll' ? 'poll' : q.ox ? 'ox' : 'quiz');
@@ -121,7 +124,7 @@ export function parseQuestions(text) {
       continue;
     }
     const q = { kind: null, text: '', options: [] };
-    let answer = null, ox = false, size = null, t = null, show = null;
+    let answer = null, ox = false, size = null, t = null, show = null, reveal = null;
     for (const line of lines) {
       let m;
       if ((m = line.match(/^(OX|Q|P|G)\s*[:：]\s*(.*)$/i))) {
@@ -139,6 +142,10 @@ export function parseQuestions(text) {
         }
       } else if ((m = line.match(/^T\s*[:：]\s*(\d+)\s*(초|s)?$/i))) {
         t = Number(m[1]);
+      } else if ((m = line.match(/^정답\s*공개\s*[:：]\s*(.+)$/))) {
+        const w = m[1].replace(/\s/g, '');
+        reveal = /^(자동|auto)/i.test(w) ? 'auto' : /^(수동|manual|버튼)/i.test(w) ? 'manual' : /^(기본|default)/i.test(w) ? null : 'x';
+        if (reveal === 'x') throw new Error(`${n}번 문항: 정답공개는 자동 / 수동 중에서 골라 주세요.`);
       } else if ((m = line.match(/^공개\s*[:：]\s*(.+)$/))) {
         const w = m[1].replace(/\s/g, '').toLowerCase();
         show = Object.keys(SHOW_WORDS).find(k => SHOW_WORDS[k].some(x => w.startsWith(x)));
@@ -191,6 +198,7 @@ export function parseQuestions(text) {
       q.time_limit = t;
     }
     if (show) q.show = show;
+    if (reveal && q.kind !== 'game') q.reveal = reveal;
     if (q.kind === 'quiz') {
       if (answer == null) throw new Error(ox ? `${n}번 문항: "정답: O" 또는 "정답: X" 줄을 넣어 주세요.` : `${n}번 문항: 정답 보기 앞에 * 를 붙여 주세요. (투표라면 Q: 대신 P:)`);
       q.answer = answer;
@@ -218,6 +226,7 @@ export function toText(questions) {
       const lines = [`OX: ${q.text}`, `정답: ${q.answer === 1 ? 'X' : 'O'}`];
       if (q.time_limit != null) lines.push(`T: ${q.time_limit}`);
       if (q.show) lines.push(`공개: ${{ live: '실시간', reveal: '정답때', hidden: '비공개' }[q.show]}`);
+      if (q.reveal) lines.push(`정답공개: ${q.reveal === 'auto' ? '자동' : '수동'}`);
       return lines.join('\n');
     }
     const quiz = q.kind !== 'poll';
@@ -225,6 +234,7 @@ export function toText(questions) {
     q.options.forEach((o, i) => lines.push(`${quiz && i === q.answer ? '*' : '-'} ${o}`));
     if (q.time_limit != null) lines.push(`T: ${q.time_limit}`);
     if (q.show) lines.push(`공개: ${{ live: '실시간', reveal: '정답때', hidden: '비공개' }[q.show]}`);
+    if (q.reveal) lines.push(`정답공개: ${q.reveal === 'auto' ? '자동' : '수동'}`);
     return lines.join('\n');
   }).join('\n\n') + '\n';
 }
