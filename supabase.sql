@@ -32,6 +32,7 @@ alter table public.game add column if not exists auto_reveal boolean not null de
 alter table public.game add column if not exists lobby_title text;                            -- 대기 화면 큰 문구 (비우면 기본 문구)
 alter table public.game add column if not exists lobby_sub   text;                            -- 대기 화면 작은 문구
 alter table public.game add column if not exists show_qr     boolean not null default false;  -- 진행 중에 입장 QR 팝업 띄우기
+alter table public.game add column if not exists audio_seq   int not null default 0;           -- 노래 '다시 듣기'를 누를 때마다 +1
 alter table public.game add column if not exists kick_epoch  int not null default 0;          -- 누가 내보내질 때마다 +1 (폰이 자기 상태를 한 번 확인)
 alter table public.game add column if not exists spotlight   text;                            -- 스포트라이트 받는 참가자(짧은 id), 없으면 null
 alter table public.game add column if not exists chat_mode text not null default 'panel';  -- 채팅 표시: panel(오른쪽 채팅창) | bubble(캐릭터 머리 위 말풍선)         -- 스크린 맵: auto(자동) | doll(인형의 집) | stage(퀴즈 무대)
@@ -94,6 +95,7 @@ create table if not exists public.votes (
   primary key (player_id, q_index)          -- 1인 1문항 1표
 );
 create index if not exists votes_q_idx on public.votes (q_index, choice);
+alter table public.votes add column if not exists answer_text text;     -- 주관식으로 적은 답
 
 -- 정답 공개된 문항 기록 (점수 계산용)
 create table if not exists public.results (
@@ -546,6 +548,8 @@ begin
     n := jsonb_array_length(q -> 'options');
     if n < 2 or n > 6 then
       raise exception '%번 문항: 보기는 2~6개여야 합니다.', i; end if;
+    if coalesce((q ->> 'typed')::boolean, false) and (jsonb_typeof(q -> 'answers') is distinct from 'array' or jsonb_array_length(q -> 'answers') = 0) then
+      raise exception '%번 문항: 주관식은 답이 하나 이상 필요합니다.', i; end if;
     if kind = 'quiz' and (jsonb_typeof(q -> 'answer') is distinct from 'number'
                           or (q ->> 'answer')::int < 0 or (q ->> 'answer')::int >= n) then
       raise exception '%번 문항: answer(정답 번호, 0부터 시작)가 올바르지 않습니다.', i; end if;
@@ -602,8 +606,12 @@ begin
                    'options',    q -> 'options',
                    'kind',       kind,
                    'ox',         coalesce((q ->> 'ox')::boolean, false),
+                   'typed',      coalesce((q ->> 'typed')::boolean, false),   -- 주관식 (답은 여기 안 실어요: 정답 공개 때 answer_text 로)
+                   'image',      q -> 'image',                                -- 문제 그림 (스크린에 크게)
+                   'audio',      q -> 'audio',                                -- 노래 {src, start, len}
                    -- 누가 뭘 골랐는지: live = 고르는 즉시 공개 · reveal = 정답 공개 때 · hidden = 끝까지 비공개(인원수만)
-                   'show',       coalesce(q ->> 'show', case when kind = 'poll' then 'live' else 'reveal' end),
+                   'show',       case when coalesce((q ->> 'typed')::boolean, false) then 'reveal'
+                                      else coalesce(q ->> 'show', case when kind = 'poll' then 'live' else 'reveal' end) end,
                    'reveal',     q ->> 'reveal',       -- 이 문항만 정답 공개 방식: auto / manual / 없으면 기본 설정
                    'time_limit', coalesce((q ->> 'time_limit')::int, case when kind = 'poll' then 0 else 20 end)) end,
     correct    = null,
@@ -639,7 +647,62 @@ begin
   on conflict (q_index) do update
     set kind = excluded.kind, correct = excluded.correct, time_limit = excluded.time_limit, game = excluded.game;
 
-  update game set phase = 'reveal', correct = ans, updated_at = now() where id = 1;
+  update game set phase = 'reveal', correct = ans,
+    question = question
+               || case when coalesce((q ->> 'typed')::boolean, false) then jsonb_build_object('answer_text', q -> 'answers' -> 0) else '{}'::jsonb end
+               || case when q ? 'chorus' then jsonb_build_object('chorus', q -> 'chorus') else '{}'::jsonb end,   -- 싸비는 정답 공개 때만 실어요
+    updated_at = now() where id = 1;
+end $$;
+
+-- 주관식 답 비교용: 띄어쓰기·문장부호·대소문자 무시
+create or replace function public._norm_answer(t text)
+returns text language sql immutable as $$
+  select regexp_replace(lower(normalize(coalesce(t, ''), NFC)), '[^0-9a-z가-힣ㄱ-ㅎㅏ-ㅣぁ-んァ-ン一-龥]', '', 'g')
+$$;
+
+-- 주관식 제출: 서버에서 바로 채점해서 choice 0(정답)/1(오답) 으로 저장 → 점수 계산은 객관식과 똑같이
+create or replace function public.submit_text(p_id uuid, p_text text)
+returns text language plpgsql security definer set search_path = public as $$
+declare
+  g    game;
+  lim  int;
+  el   int;
+  ok   boolean;
+  t    text := left(btrim(coalesce(p_text, '')), 60);
+begin
+  select * into g from game where id = 1;
+  if g.phase <> 'question' then return 'closed'; end if;
+  if not coalesce((g.question ->> 'typed')::boolean, false) then return 'invalid'; end if;
+  if not exists (select 1 from players where id = p_id) then return 'unknown_player'; end if;
+  if _norm_answer(t) = '' then return 'empty'; end if;
+  el  := floor(extract(epoch from (clock_timestamp() - g.started_at)) * 1000);
+  lim := coalesce((g.question ->> 'time_limit')::int, 0);
+  if lim > 0 and el > lim * 1000 + 1500 then return 'timeout'; end if;
+  select exists (select 1 from host_secret h, jsonb_array_elements_text(h.questions -> g.q_index -> 'answers') a
+                 where h.id = 1 and _norm_answer(a) = _norm_answer(t)) into ok;
+  insert into votes (player_id, q_index, choice, elapsed_ms, answer_text)
+  values (p_id, g.q_index, case when ok then 0 else 1 end, least(el, 2147483647), t)
+  on conflict do nothing;
+  if found then return 'ok'; else return 'already'; end if;
+end $$;
+
+-- 주관식: 오답으로 많이 나온 답 (정답 공개 후 스크린에 재미로)
+create or replace function public.get_typed_top(p_q int)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select case when (select phase from game where id = 1) in ('reveal', 'leaderboard', 'end') then
+    coalesce((select jsonb_agg(jsonb_build_object('t', t, 'n', n) order by n desc, t)
+              from (select min(answer_text) as t, count(*) as n from votes
+                    where q_index = p_q and choice = 1 and answer_text is not null
+                    group by _norm_answer(answer_text) order by count(*) desc limit 5) x), '[]'::jsonb)
+  else '[]'::jsonb end
+$$;
+
+-- 노래 다시 듣기 (스크린이 audio_seq 가 바뀌면 다시 틀어요)
+create or replace function public.host_replay_audio(p_pin text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  perform _check_pin(p_pin);
+  update game set audio_seq = audio_seq + 1, updated_at = now() where id = 1;
 end $$;
 
 create or replace function public.host_set_phase(p_pin text, p_phase text)
@@ -782,8 +845,12 @@ returns int language plpgsql security definer set search_path = public as $$
 declare v int;
 begin
   perform _check_pin(p_pin);
-  if p_data !~ '^data:image/(webp|png|jpeg|gif);base64,' then raise exception '이미지 파일만 올릴 수 있어요.'; end if;
-  if length(p_data) > 2000000 then raise exception '이미지가 너무 커요. (최대 약 1.5MB)'; end if;
+  if p_data ~ '^data:audio/(wav|mpeg|mp4|aac|ogg|webm);base64,' then
+    if length(p_data) > 2800000 then raise exception '노래 구간이 너무 길어요. (최대 약 30초)'; end if;
+  else
+    if p_data !~ '^data:image/(webp|png|jpeg|gif);base64,' then raise exception '이미지나 노래 파일만 올릴 수 있어요.'; end if;
+    if length(p_data) > 2000000 then raise exception '이미지가 너무 커요. (최대 약 1.5MB)'; end if;
+  end if;
   if p_thumb is not null and (p_thumb !~ '^data:image/(webp|png|jpeg);base64,' or length(p_thumb) > 120000) then p_thumb := null; end if;
   insert into media (data, thumb, name) values (p_data, p_thumb, left(p_name, 80)) returning id into v;
   return v;
@@ -795,6 +862,7 @@ returns jsonb language plpgsql stable security definer set search_path = public 
 begin
   perform _check_pin(p_pin);
   return coalesce((select jsonb_agg(jsonb_build_object('id', id, 'thumb', thumb, 'name', name,
+                                                       'audio', data like 'data:audio/%',
                                                        'kb', length(data) * 3 / 4 / 1024, 'at', created_at) order by id desc)
                    from media), '[]'::jsonb);
 end $$;
@@ -851,6 +919,9 @@ begin
                    'ox', coalesce((q ->> 'ox')::boolean, false),
                    'show', coalesce(q ->> 'show', case when kind = 'poll' then 'live' else 'reveal' end),
                    'reveal', q ->> 'reveal',
+                   'typed', coalesce((q ->> 'typed')::boolean, false),
+                   'image', q -> 'image', 'audio', q -> 'audio', 'chorus', q -> 'chorus',
+                   'answer_text', case when coalesce((q ->> 'typed')::boolean, false) then q -> 'answers' -> 0 end,   -- 이미 공개한 문항을 다시 볼 때만 쓰여요
                    'time_limit', 0) end,
     updated_at = now()
   where id = 1;
@@ -889,6 +960,8 @@ revoke execute on function
 from public, anon, authenticated;
 
 grant execute on function
+  public.submit_text(uuid, text),
+  public.get_typed_top(int),
   public.server_now(),
   public.join_game(uuid, text, jsonb, boolean),
   public.get_crowd(),
@@ -922,6 +995,7 @@ grant execute on function
   public.host_delete_set(text, int),
   public.host_delete_media(text, int),
   public.host_kick(text, text, boolean),
+  public.host_replay_audio(text),
   public.host_list_banned(text),
   public.host_unban(text, text),
   public.host_set_qr(text, boolean),

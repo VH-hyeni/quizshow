@@ -1,8 +1,9 @@
-import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE, joinUrl } from './common.js?v=20261119g';
-import { GAMES, KIND_LABEL, kindOf, fmtPlay, showOf, SHOW_LABEL, revealOf } from './questions-format.js?v=20261119g';
-import { nextAction, prevAction, revealAction, hostActions } from './flow.js?v=20261119g';
-import { sound, sfx, bgm } from './sound.js?v=20261119g';
-import { avatarSVG, mascotSVG } from './characters.js?v=20261119g';
+import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE, joinUrl } from './common.js?v=20261120a';
+import { GAMES, KIND_LABEL, kindOf, fmtPlay, showOf, SHOW_LABEL, revealOf } from './questions-format.js?v=20261120a';
+import { nextAction, prevAction, revealAction, hostActions } from './flow.js?v=20261120a';
+import { sound, sfx, bgm } from './sound.js?v=20261120a';
+import { avatarSVG, mascotSVG } from './characters.js?v=20261120a';
+import { playSong, stopSong, preloadSong, onSong, songState, cdHTML } from './songplayer.js?v=20261120a';
 
 if (!configured) { showConfigError(); throw new Error('config.js not set'); }
 
@@ -66,6 +67,8 @@ function render(g) {
   else if (entering) startPhaseMusic(g);
 
   if (!['question', 'closed', 'reveal'].includes(g.phase)) stage.classList.remove('crowd-mode');
+  if (!(g.question?.typed && ['question', 'closed'].includes(g.phase))) stage.classList.remove('typed-q');
+  songFlow(g, prev, entering);
   setMap(g);
   bubbleMode = g.chat_mode === 'bubble';
   $('#chatpanel').classList.toggle('off', g.chat_on === false || bubbleMode);
@@ -79,6 +82,40 @@ function render(g) {
   if (g.phase === 'leaderboard' || g.phase === 'end') return renderBoard(g.phase === 'end');
 }
 
+// ---------- 노래 맞히기 ----------
+// 문제 시작 → 도입부 · 정답 공개 → 싸비(있으면) · '다시 듣기'(audio_seq) → 지금 단계에 맞는 구간 다시
+function songNow(g) {
+  const q = g.question;
+  if (!q || !['question', 'closed', 'reveal'].includes(g.phase)) return null;
+  return g.phase === 'reveal' && q.chorus?.src ? q.chorus : q.audio?.src ? q.audio : null;
+}
+function songFlow(g, prev, entering) {
+  const q = g.question;
+  const inQ = q && ['question', 'closed', 'reveal'].includes(g.phase) && (q.audio?.src || q.chorus?.src);
+  if (!inQ) { if (songState.playing) stopSong(); return; }
+  preloadSong(q.audio); preloadSong(q.chorus);
+  const replay = prev && prev.audio_seq !== g.audio_seq && prev.q_index === g.q_index;
+  const k = `${g.q_index}:${g.started_at}`;
+  if (entering && g.phase === 'question') { bgm.stop(); playSong(q.audio, `${k}:intro`); }
+  else if (entering && g.phase === 'reveal' && q.chorus?.src && !(prev && prev.phase === 'reveal')) { bgm.stop(); playSong(q.chorus, `${k}:chorus`); }
+  else if (replay) { bgm.stop(); const a = songNow(g); if (a) playSong(a, `${k}:${g.audio_seq}`); }
+}
+function paintCd() {
+  const cd = $('#cdp'); if (!cd) return;
+  cd.classList.toggle('playing', songState.playing);
+  cd.classList.toggle('blocked', songState.blocked);
+  const cap = $('#cdp-cap');
+  if (cap && songState.blocked) cap.textContent = '화면을 한 번 눌러 주세요 (소리 켜기)';
+  else if (cap && game) cap.textContent = game.phase === 'reveal' ? (game.question?.chorus?.src ? (songState.playing ? '싸비 나갑니다 🎶' : '싸비 다시 듣기') : '정답 공개!') : songState.playing ? '노래를 잘 들어 보세요' : '어떤 노래일까요?';
+}
+onSong(paintCd);
+document.addEventListener('click', e => {
+  if (!e.target.closest('#cdp')) return;
+  unlockAudio();
+  const a = game && songNow(game); if (!a) return;
+  bgm.stop(); playSong(a, `local:${Date.now()}`);
+});
+
 // 스크린 배경: 진행자 화면 → 화면 설정 → 스크린 배경 (예전 값 doll·stage 도 받아 줌)
 const MAPS = { auto: 'auto', night: 'night', purple: 'purple', wine: 'wine', forest: 'forest', ocean: 'ocean', doll: 'wine', stage: 'purple' };
 function setMap(g) {
@@ -90,7 +127,7 @@ function setMap(g) {
 function playTransition(g) {
   switch (g.phase) {
     case 'lobby': bgm.play('lobby'); break;
-    case 'question': lastSec = null; timeupPlayed = false; if (g.question?.kind === 'slide') { bgm.stop(); sfx.start?.(); break; } sfx.start(); bgm.play('question'); break;
+    case 'question': lastSec = null; timeupPlayed = false; if (g.question?.kind === 'slide' || g.question?.audio?.src) { bgm.stop(); sfx.start?.(); break; } sfx.start(); bgm.play('question'); break;
     case 'closed': bgm.stop(); if (!timeupPlayed) { timeupPlayed = true; sfx.timeup(); } break;
     case 'reveal': bgm.stop(); sfx.reveal(g.question?.kind === 'quiz'); break;
     case 'leaderboard': bgm.stop(); sfx.drumroll(1.6); break;
@@ -371,13 +408,20 @@ function renderQuestion(g) {
         <div class="clock ${q.time_limit ? '' : 'hidden'}" id="clock" aria-label="남은 시간"><span></span></div>
       </div>
       <div class="answers-count" id="ans"></div>
-      <div class="sopts ${q.ox ? 'ox' : ''}">
+      ${q.audio?.src ? `<div class="song-row">${cdHTML()}</div>` : '<div class="song-row hidden" id="song-slot"></div>'}
+      ${q.typed ? `<div class="typed-panel" id="typed">
+          <div class="typed-wait">✍️ 폰에 정답을 직접 적어 주세요 <small>띄어쓰기·대소문자는 상관없어요</small></div>
+          <div class="typed-ans hidden" id="typed-ans"></div>
+          <div class="typed-wrong hidden" id="typed-wrong"></div>
+        </div>` : ''}
+      ${q.image ? '<div class="q-split"><figure class="q-img"><img id="q-img" alt=""></figure>' : ''}
+      <div class="sopts ${q.ox ? 'ox' : ''} ${q.typed ? 'typed' : ''}">
         ${q.options.map((o, i) => `
           <div class="sopt opt-${i}" data-i="${i}">
             <div class="fill" style="width:0"></div>
             <div class="head">
               <span class="badge">${q.ox ? (i === 0 ? '○' : '✕') : LABELS[i]}</span>
-              <span class="txt">${q.ox ? (i === 0 ? '맞아요' : '아니에요') : esc(o)}</span>
+              <span class="txt">${q.ox ? (i === 0 ? '맞아요' : '아니에요') : q.typed ? (i === 0 ? '맞힌 사람' : '아쉬운 사람') : esc(o)}</span>
               <span class="cnt"></span>
               <button class="zoom-btn" type="button" data-zoom="${i}" aria-label="${LABELS[i]} 보기를 고른 사람 크게 보기" title="크게 보기 (숫자키 ${i + 1})">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M15.5 15.5L21 21" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/><path d="M10.5 7.5v6M7.5 10.5h6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
@@ -386,9 +430,39 @@ function renderQuestion(g) {
             <div class="crowd"></div>
             <div class="pct"></div>
           </div>`).join('')}
-      </div>
+      </div>${q.image ? '</div>' : ''}
       <div class="banner" id="banner"></div>
       <div class="spectators" id="spect"><span class="spec-label">구경 중 <b>0</b>명</span><div class="spec-crowd"></div></div>`;
+    if (q.image) slideImage(q.image).then(src => {
+      const im = $('#q-img');
+      if (!im || view !== key) return;
+      if (src) im.src = src; else im.closest('figure').remove();
+    });
+  }
+  // 싸비만 있는 문항: 정답 공개 때 CD 플레이어 꺼내기
+  if (g.phase === 'reveal' && q.chorus?.src && $('#song-slot') && !$('#cdp')) { $('#song-slot').innerHTML = cdHTML(); $('#song-slot').classList.remove('hidden'); }
+  paintCd();
+  const srow = stage.querySelector('.song-row');
+  if (srow && srow.querySelector('#cdp')) {
+    srow.classList.toggle('compact', g.phase === 'reveal');
+    srow.classList.toggle('hidden', g.phase === 'reveal' && !q.chorus?.src && !songState.playing);
+  }
+  if (q.typed) {
+    const rev = g.phase === 'reveal';
+    stage.classList.toggle('typed-q', !rev);
+    $('#typed').classList.toggle('revealed', rev);
+    if (rev && q.answer_text) {
+      const a = $('#typed-ans'); a.classList.remove('hidden'); a.innerHTML = `정답 <b>${esc(q.answer_text)}</b>`;
+      if (!$('#typed-wrong').dataset.done) {
+        $('#typed-wrong').dataset.done = '1';
+        rpc('get_typed_top', { p_q: g.q_index }).then(list => {
+          if (!list?.length) return;
+          const w = $('#typed-wrong'); if (!w) return;
+          w.classList.remove('hidden');
+          w.innerHTML = `<span>이런 답도 나왔어요</span>${list.map(x => `<em>${esc(x.t)}${x.n > 1 ? ` <small>×${x.n}</small>` : ''}</em>`).join('')}`;
+        }).catch(() => {});
+      }
+    }
   }
   const opts = [...stage.querySelectorAll('.sopt')];
   opts.forEach((el, i) => {
@@ -677,6 +751,7 @@ function updateCtrl() {
   $('#ctrl-reveal').classList.toggle('hidden', !r || (game?.phase === 'closed' && n.run && /공개|결과/.test(n.label)));
   if (r) $('#ctrl-reveal').textContent = r.label;
   $('#ctrl-reveal').disabled = ctrlBusy;
+  $('#ctrl-song').classList.toggle('hidden', !(game && songNow(game)));
 }
 $('#ctrl-open').addEventListener('click', () => {
   if (ctrlPin) return;
@@ -697,6 +772,7 @@ $('#ctrl-form').addEventListener('submit', async e => {
   } catch (err) { $('#ctrl-msg').textContent = err.message; }
 });
 $('#ctrl-next').addEventListener('click', () => nextAction(game, ctrlA).run?.());
+$('#ctrl-song').addEventListener('click', () => { const a = game && songNow(game); if (a) { bgm.stop(); playSong(a, `local:${Date.now()}`); } });
 $('#ctrl-prev').addEventListener('click', () => prevAction(game, ctrlA).run?.());
 $('#ctrl-reveal').addEventListener('click', () => revealAction(game, ctrlA)?.run?.());
 $('#ctrl-lock').addEventListener('click', () => {

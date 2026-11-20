@@ -15,6 +15,10 @@
 //
 //   공개: 실시간                ← (선택) 누가 뭘 골랐는지 보여 주는 방식
 //                                 실시간 = 고르는 즉시 · 정답때 = 정답 공개 때 · 비공개 = 끝까지 안 보임(인원수만)
+//   이미지: #5                  ← (퀴즈·투표·주관식) 문제 그림을 스크린에 크게
+//   W: 주관식 문제  +  답: 정답 / 다른 표기   ← 폰에 직접 적어서 맞히기 (띄어쓰기·대소문자 무시)
+//   노래: #3  또는  노래: https://youtu.be/… @30 10초   ← 스크린에서 노래 들려주기 (@시작초, 들려줄 초)
+//   싸비: #4  또는  싸비: https://youtu.be/… @60 15초   ← 정답 공개 때 틀 부분
 //   정답공개: 수동              ← (선택) 이 문항만 정답 공개 방식 따로: 자동(시간 끝나면 바로) / 수동(버튼 눌러 공개)
 //                                 안 쓰면 진행자 화면의 기본 설정을 따라요
 //                                 생략하면 퀴즈는 정답때, 투표는 실시간
@@ -36,12 +40,16 @@ export const GAMES = {
   tap:      { name: '광클 대결', words: ['광클', '연타', 'tap'], hint: '시간 안에 최대한 많이 누르세요' },
 };
 
-export const KIND_LABEL = { quiz: '정답 퀴즈', ox: 'OX 퀴즈', poll: '투표', game: '미니게임', slide: '발표' };
+export const KIND_LABEL = { quiz: '정답 퀴즈', ox: 'OX 퀴즈', typed: '주관식', poll: '투표', game: '미니게임', slide: '발표' };
 export const SHOW_LABEL = { live: '실시간 공개', reveal: '정답 때 공개', hidden: '비공개' };
 export const revealOf = (q, g) => (q?.reveal ? q.reveal === 'auto' : !!g?.auto_reveal);
 export const showOf = q => q.show || (q.kind === 'poll' ? 'live' : 'reveal');
 const SHOW_WORDS = { live: ['실시간', '바로', '즉시', 'live'], reveal: ['정답때', '정답', '나중', '공개때', 'reveal'], hidden: ['비공개', '익명', '숨김', 'hidden'] };
-export const kindOf = q => (q.kind === 'slide' ? 'slide' : q.kind === 'game' ? 'game' : q.kind === 'poll' ? 'poll' : q.ox ? 'ox' : 'quiz');
+export const kindOf = q => (q.kind === 'slide' ? 'slide' : q.kind === 'game' ? 'game' : q.kind === 'poll' ? 'poll' : q.ox ? 'ox' : q.typed ? 'typed' : 'quiz');
+// 주관식 답 비교: 띄어쓰기·문장부호·대소문자 무시 (서버의 _norm_answer 와 같은 규칙)
+export const normAnswer = s => String(s || '').toLowerCase().normalize('NFC').replace(/[^0-9a-z가-힣ㄱ-ㅎㅏ-ㅣぁ-んァ-ン一-龥]/g, '');
+// 노래: '#12' (올린 MP3) 또는 유튜브 주소 → 유튜브 영상 id
+export const ytId = src => { const m = String(src || '').match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/))([\w-]{11})/); return m ? m[1] : null; };
 
 // 진행자 화면의 "추가" 버튼이 편집기에 넣어 주는 틀
 export const TEMPLATES = {
@@ -51,6 +59,9 @@ export const TEMPLATES = {
   order: `G: 숫자순서\n크기: 4`,
   reaction: `G: 반응속도`,
   tap: `G: 광클\nT: 10`,
+  typed: `W: 정답을 직접 적어 보세요\n답: 정답 / 다른 표기\nT: 30`,
+  song: `Q: 이 노래의 제목은?\n- 보기 1\n* 정답 보기\n- 보기 3\n- 보기 4\nT: 30`,
+  songw: `W: 이 노래의 제목은?\n답: 노래 제목\nT: 30`,
   slide: `S: 해설 제목\n여기에 설명을 한 줄씩 적어요\n- 글머리표도 쓸 수 있어요`,
 };
 
@@ -124,11 +135,11 @@ export function parseQuestions(text) {
       continue;
     }
     const q = { kind: null, text: '', options: [] };
-    let answer = null, ox = false, size = null, t = null, show = null, reveal = null;
+    let answer = null, ox = false, size = null, t = null, show = null, reveal = null, typed = false, answers = [], audio = null, chorus = null, img = null;
     for (const line of lines) {
       let m;
-      if ((m = line.match(/^(OX|Q|P|G)\s*[:：]\s*(.*)$/i))) {
-        if (q.kind) throw new Error(`${n}번 문항: 문제 줄(Q:/OX:/P:/G:)이 두 번 나왔어요. 문항 사이에 빈 줄을 넣어 주세요.`);
+      if ((m = line.match(/^(OX|Q|P|G|W)\s*[:：]\s*(.*)$/i))) {
+        if (q.kind) throw new Error(`${n}번 문항: 문제 줄(Q:/OX:/P:/W:/G:)이 두 번 나왔어요. 문항 사이에 빈 줄을 넣어 주세요.`);
         const tag = m[1].toUpperCase();
         if (tag === 'G') {
           const [first, ...rest] = m[2].trim().split(/\s+/);
@@ -138,8 +149,30 @@ export function parseQuestions(text) {
         } else {
           q.kind = tag === 'P' ? 'poll' : 'quiz';
           ox = tag === 'OX';
+          typed = tag === 'W';
           q.text = m[2].trim();
         }
+      } else if ((m = line.match(/^답\s*[:：]\s*(.+)$/)) && typed) {
+        answers.push(...m[1].split(/\s*[\/|]\s*/).map(x => x.trim()).filter(Boolean));
+      } else if ((m = line.match(/^(노래|음악|song|싸비|후렴|chorus)\s*[:：]\s*(.+)$/i))) {
+        // 노래: #12  또는  노래: https://youtu.be/xxxx @30 10초   (@시작초, 들려줄 초)
+        // 싸비: …  ← 정답 공개 때 틀 부분 (같은 형식)
+        const ch = /^(싸비|후렴|chorus)$/i.test(m[1]);
+        const parts = m[2].trim().split(/\s+/);
+        const src = parts.shift();
+        if (!/^#\d+$/.test(src) && !ytId(src)) throw new Error(`${n}번 문항: ${ch ? '싸비' : '노래'}는 올린 MP3 번호(#3)나 유튜브 주소로 적어 주세요.`);
+        const a = { src };
+        for (const p of parts) {
+          let k;
+          if ((k = p.match(/^@(\d+(?:\.\d+)?)$/))) a.start = Number(k[1]);
+          else if ((k = p.match(/^(\d+)초?$/))) a.len = Math.min(60, Math.max(2, Number(k[1])));
+        }
+        if (ch) chorus = a; else audio = a;
+      } else if ((m = line.match(/^(이미지|사진|img|image)\s*[:：]\s*(.+)$/i))) {
+        const v = m[2].trim();
+        if (!/^#\d+$/.test(v) && !/^https?:\/\//.test(v) && !/^[\w./-]+\.(png|jpe?g|gif|webp|svg)$/i.test(v))
+          throw new Error(`${n}번 문항: 이미지는 올린 그림 번호(#1)나 https:// 주소로 적어 주세요.`);
+        img = v;
       } else if ((m = line.match(/^T\s*[:：]\s*(\d+)\s*(초|s)?$/i))) {
         t = Number(m[1]);
       } else if ((m = line.match(/^정답\s*공개\s*[:：]\s*(.+)$/))) {
@@ -166,7 +199,21 @@ export function parseQuestions(text) {
         throw new Error(`${n}번 문항: 이해할 수 없는 줄 → "${line}"`);
       }
     }
-    if (!q.kind) throw new Error(`${n}번 문항: Q: / OX: / P: / G: 로 시작하는 문제 줄이 없어요.`);
+    if (!q.kind) throw new Error(`${n}번 문항: Q: / OX: / P: / W: / G: 로 시작하는 문제 줄이 없어요.`);
+    if (audio && q.kind !== 'game') q.audio = audio;
+    if (chorus && q.kind !== 'game') q.chorus = chorus;
+    if (img && q.kind !== 'game') q.image = img;
+    if (typed) {
+      if (!q.text) throw new Error(`${n}번 문항: 문제 내용이 비어 있어요.`);
+      if (!answers.length) throw new Error(`${n}번 문항: 주관식은 "답: 정답" 줄이 필요해요. 여러 표기는 / 로 나눠요.`);
+      if (answers.some(a => !normAnswer(a))) throw new Error(`${n}번 문항: 답에 글자나 숫자가 있어야 해요.`);
+      Object.assign(q, { typed: true, answers: answers.slice(0, 10).map(a => a.slice(0, 60)), options: ['정답', '오답'], answer: 0 });
+      if (t != null) { if (t > 600) throw new Error(`${n}번 문항: 제한시간은 600초 이하로 해 주세요.`); q.time_limit = t; }
+      if (reveal) q.reveal = reveal;
+      delete q.game;
+      out.push(q);
+      continue;
+    }
 
     if (q.kind === 'game') {
       const g = { kind: 'game', game: q.game, text: q.text };
@@ -222,8 +269,16 @@ export function toText(questions) {
       if (q.game === 'tap' && q.duration) lines.push(`T: ${q.duration}`);
       return lines.join('\n');
     }
+    const aLine = (tag, a) => a?.src ? [`${tag}: ${a.src}${a.start ? ` @${a.start}` : ''}${a.len ? ` ${a.len}초` : ''}`] : [];
+    const song = [...(q.image ? [`이미지: ${q.image}`] : []), ...aLine('노래', q.audio), ...aLine('싸비', q.chorus)];
+    if (q.typed) {
+      const lines = [`W: ${q.text}`, `답: ${(q.answers || []).join(' / ')}`, ...song];
+      if (q.time_limit != null) lines.push(`T: ${q.time_limit}`);
+      if (q.reveal) lines.push(`정답공개: ${q.reveal === 'auto' ? '자동' : '수동'}`);
+      return lines.join('\n');
+    }
     if (q.ox) {
-      const lines = [`OX: ${q.text}`, `정답: ${q.answer === 1 ? 'X' : 'O'}`];
+      const lines = [`OX: ${q.text}`, `정답: ${q.answer === 1 ? 'X' : 'O'}`, ...song];
       if (q.time_limit != null) lines.push(`T: ${q.time_limit}`);
       if (q.show) lines.push(`공개: ${{ live: '실시간', reveal: '정답때', hidden: '비공개' }[q.show]}`);
       if (q.reveal) lines.push(`정답공개: ${q.reveal === 'auto' ? '자동' : '수동'}`);
@@ -232,6 +287,7 @@ export function toText(questions) {
     const quiz = q.kind !== 'poll';
     const lines = [`${quiz ? 'Q' : 'P'}: ${q.text}`];
     q.options.forEach((o, i) => lines.push(`${quiz && i === q.answer ? '*' : '-'} ${o}`));
+    lines.push(...song);
     if (q.time_limit != null) lines.push(`T: ${q.time_limit}`);
     if (q.show) lines.push(`공개: ${{ live: '실시간', reveal: '정답때', hidden: '비공개' }[q.show]}`);
     if (q.reveal) lines.push(`정답공개: ${q.reveal === 'auto' ? '자동' : '수동'}`);

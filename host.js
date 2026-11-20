@@ -1,7 +1,8 @@
-import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, LABELS, TITLE, joinUrl } from './common.js?v=20261119g';
-import { parseQuestions, toText, SAMPLE, TEMPLATES, KIND_LABEL, kindOf, GAMES, fmtPlay, showOf, SHOW_LABEL, revealOf } from './questions-format.js?v=20261119g';
-import { nextAction as flowNext, prevAction, hostActions, PHASE_NAME } from './flow.js?v=20261119g';
-import { avatarSVG } from './characters.js?v=20261119g';
+import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, LABELS, TITLE, joinUrl } from './common.js?v=20261120a';
+import { parseQuestions, toText, SAMPLE, TEMPLATES, KIND_LABEL, kindOf, GAMES, fmtPlay, showOf, SHOW_LABEL, revealOf, ytId } from './questions-format.js?v=20261120a';
+import { nextAction as flowNext, prevAction, hostActions, PHASE_NAME } from './flow.js?v=20261120a';
+import { avatarSVG } from './characters.js?v=20261120a';
+import { playSong, stopSong, onSong, songState } from './songplayer.js?v=20261120a';
 
 if (!configured) { showConfigError(); throw new Error('config.js not set'); }
 
@@ -50,9 +51,7 @@ function start(qs) {
   $('#link-screen').href = new URL('screen.html', location.href).href;
   $('#link-join').href = joinUrl();
   
-  const saved = store.get('qs.editor');
-  $('#editor').value = saved ?? (questions.length ? toText(questions) : SAMPLE);
-  $('#editor').addEventListener('input', () => store.set('qs.editor', $('#editor').value));
+  syncText();
 
   renderQList();
   syncClock();
@@ -65,61 +64,37 @@ function start(qs) {
 }
 
 // ---------- 문항 편집 ----------
+// 문항 목록이 곧 편집 대상이에요. 문항을 누르면 아래에서 자세히 고치고, 고치면 잠깐 뒤 자동 저장돼요.
 $('#sample').addEventListener('click', () => {
-  if ($('#editor').value.trim() && !confirm('편집 중인 내용을 예시로 바꿀까요?')) return;
-  $('#editor').value = SAMPLE; store.set('qs.editor', SAMPLE);
+  if ($('#editor').value.trim() && !confirm('텍스트 편집 칸을 예시로 바꿀까요? ("텍스트 적용"을 눌러야 반영돼요)')) return;
+  $('#editor').value = SAMPLE;
 });
-
-// 유형별 틀 추가 버튼
+// ＋ 추가 버튼: 틀을 문항으로 바로 추가 (고른 문항 바로 뒤, 없으면 맨 끝)
 document.querySelectorAll('[data-tpl]').forEach(b => b.addEventListener('click', () => {
-  const ed = $('#editor');
-  const cur = ed.value.replace(/\s+$/, '');
-  ed.value = (cur ? cur + '\n\n' : '') + TEMPLATES[b.dataset.tpl] + '\n';
-  store.set('qs.editor', ed.value);
-  ed.focus();
-  ed.scrollTop = ed.scrollHeight;
-  msg($('#edit-msg'), '맨 아래에 틀을 추가했어요. 내용을 고친 뒤 "문항 저장"을 눌러 주세요.', 'ok');
+  addQuestions([blankOf(b.dataset.tpl)]);
 }));
-
-$('#load-server').addEventListener('click', async () => {
-  try {
-    const r = await rpc('host_check', { p_pin: pin });
-    questions = r.questions || [];
-    if (!questions.length) return msg($('#edit-msg'), '서버에 저장된 문항이 없습니다.', 'err');
-    $('#editor').value = toText(questions); store.set('qs.editor', $('#editor').value);
-    renderQList();
-    msg($('#edit-msg'), `${questions.length}개 문항을 불러왔습니다.`, 'ok');
-  } catch (err) { msg($('#edit-msg'), err.message, 'err'); }
-});
-
+// 고급: 텍스트로 한꺼번에 적용
 $('#upload').addEventListener('click', async () => {
   let qs;
   try { qs = parseQuestions($('#editor').value); }
   catch (err) { return msg($('#edit-msg'), err.message, 'err'); }
   if (game && ['question', 'closed'].includes(game.phase) &&
       !confirm('문항이 진행 중입니다. 그래도 문항 목록을 바꿀까요? (진행 중인 문항은 그대로 유지됩니다)')) return;
-  try {
-    const n = await rpc('host_load_questions', { p_pin: pin, p_questions: qs });
-    questions = qs;
-    // 이름이 있으면 문제셋에도 같이 저장
-    const name = $('#set-name').value.trim();
-    if (name) { try { await saveSet(true); } catch {} store.set('qs.liveSet', name); }
-    else store.set('qs.liveSet', '');
-    renderQList(); updateControls();
-    msg($('#edit-msg'), `✔ ${name ? `'${name}' ` : ''}${n}개 문항으로 진행할 준비가 됐어요.`, 'ok');
-  } catch (err) { msg($('#edit-msg'), err.message, 'err'); }
+  questions = qs; sel = null; renderDetail();
+  await commitNow(`✔ 텍스트 내용을 적용했어요. (${qs.length}문항)`);
 });
 
 function renderQList() {
-  const live = store.get('qs.liveSet');
+  const live = sets.find(x => x.id === setId)?.name;
   $('#qcount').textContent = questions.length ? `${live ? `· ${live} ` : ''}(${questions.length}개)` : '';
-  if (!questions.length) { $('#qlist').innerHTML = '<li class="muted">문항을 아래에서 올려 주세요</li>'; return; }
+  if (!questions.length) { $('#qlist').innerHTML = '<li class="muted">아래 ＋ 추가 버튼으로 문항을 만들어 주세요</li>'; return; }
   $('#qlist').innerHTML = questions.map((q, i) => `
-    <li class="${game && game.q_index === i ? 'cur' : ''}" draggable="true" data-i="${i}">
+    <li class="${game && game.q_index === i ? 'cur' : ''}${sel === i ? ' sel' : ''}${badIdx === i ? ' bad' : ''}" draggable="true" data-i="${i}" data-pick="${i}">
       <span class="grip" title="끌어서 순서 바꾸기" aria-hidden="true">⠿</span>
       <span class="num">${i + 1}</span>
-      <span class="t" title="${esc(q.text)}">${esc(q.text)}</span>
-      <span class="tag k-${kindOf(q)}">${q.full ? "장표" : KIND_LABEL[kindOf(q)]}${kindOf(q) === 'quiz' ? ` · 정답 ${LABELS[q.answer]}` : kindOf(q) === 'ox' ? ` · ${q.answer === 0 ? 'O' : 'X'}` : ''}</span>
+      <span class="t" title="${esc(q.text)}">${esc(q.text) || '<i class="muted">(제목 없음)</i>'}</span>
+      <span class="tag k-${kindOf(q)}">${q.full ? "장표" : KIND_LABEL[kindOf(q)]}${kindOf(q) === 'quiz' ? ` · 정답 ${LABELS[q.answer]}` : kindOf(q) === 'ox' ? ` · ${q.answer === 0 ? 'O' : 'X'}` : kindOf(q) === 'typed' ? ` · ${esc((q.answers || [])[0] || '?')}` : ''}</span>
+      ${q.audio ? `<span class="tag k-song" title="노래 문항">🎵${q.chorus?.src ? '+싸비' : ''}</span>` : ''}
       ${q.kind !== 'game' && q.kind !== 'slide' ? `<span class="tag k-show">${SHOW_LABEL[showOf(q)]}</span>
         <button class="tag rv rv-${q.reveal || 'def'}" type="button" data-rv="${i}" title="이 문항의 정답 공개 방식 (눌러서 바꾸기)">${q.reveal === 'auto' ? '⚡ 자동 공개' : q.reveal === 'manual' ? '✋ 수동 공개' : `기본 (${game?.auto_reveal ? '자동' : '수동'})`}</button>` : ''}${q.image ? '<span class="tag k-show">🖼</span>' : ''}
       <span class="mv">
@@ -144,15 +119,12 @@ async function moveQuestion(from, to) {
 }
 // 바뀐 문항 목록을 진행 목록·편집기·(같은 이름이면) 문제셋에 반영
 async function applyQuestions(next, okText) {
-  try {
-    await rpc('host_load_questions', { p_pin: pin, p_questions: next });
-    questions = next;
-    const body = toText(questions);
-    $('#editor').value = body; store.set('qs.editor', body);
-    if (store.get('qs.liveSet') && $('#set-name').value.trim() === store.get('qs.liveSet')) { try { await saveSet(true); } catch {} }
-    renderQList(); updateControls();
-    msg($('#edit-msg'), okText, 'ok');
-  } catch (err) { msg($('#edit-msg'), err.message, 'err'); }
+  const cur = sel != null ? questions[sel] : null;
+  questions = next;
+  if (cur) sel = questions.indexOf(cur);
+  if (sel < 0) sel = null;
+  renderDetail();
+  await commitNow(okText);
 }
 // 문항별 정답 공개: 기본 → 자동 → 수동 → 기본
 $('#qlist').addEventListener('click', e => {
@@ -257,8 +229,8 @@ $('#next').addEventListener('click', () => nextAction().run?.());
 $('#prev').addEventListener('click', () => prevAction(game, A).run?.());
 
 // ---------- 문제셋 (프로그램별 문항 보관) ----------
-let sets = [], setId = Number(store.get('qs.setId')) || null, setSaved = null;
-const setDirty = () => setSaved !== null && $('#editor').value !== setSaved;
+// 문제셋을 열면 그 문항들이 바로 진행 목록이 돼요. 열려 있는 문제셋은 고칠 때마다 같이 자동 저장돼요.
+let sets = [], setId = Number(store.get('qs.setId')) || null;
 async function loadSets() {
   if (!pin) return;
   try { sets = await rpc('host_list_sets', { p_pin: pin }) || []; } catch { return; }
@@ -266,51 +238,50 @@ async function loadSets() {
   renderSets();
 }
 function renderSets() {
-  $('#set-pick').innerHTML = '<option value="">새 문제셋</option>' + sets.map(x =>
+  $('#set-pick').innerHTML = '<option value="">(문제셋 없음)</option>' + sets.map(x =>
     `<option value="${x.id}">${esc(x.name)} (${x.count}문항)</option>`).join('');
   $('#set-pick').value = setId || '';
   const cur = sets.find(x => x.id === setId);
-  if (cur && document.activeElement !== $('#set-name')) $('#set-name').value = cur.name;
+  if (document.activeElement !== $('#set-name')) $('#set-name').value = cur ? cur.name : '';
   $('#set-del').disabled = !setId;
 }
 async function saveSet(quiet = false) {
   const name = $('#set-name').value.trim();
   if (!name) { $('#set-name').focus(); throw new Error('문제셋 이름을 적어 주세요. (예: 송년회 1부)'); }
-  const body = $('#editor').value;
-  let count = 0; try { count = parseQuestions(body).length; } catch {}
+  const body = toText(questions);
   const cur = sets.find(x => x.id === setId);
-  const id = await rpc('host_save_set', { p_pin: pin, p_name: name, p_body: body, p_count: count, p_id: cur && cur.name === name ? setId : null });   // 이름을 바꿔 저장하면 새 문제셋(복사본)
-  setId = id; store.set('qs.setId', id); setSaved = body;
+  const id = await rpc('host_save_set', { p_pin: pin, p_name: name, p_body: body, p_count: questions.length, p_id: cur && cur.name === name ? setId : null });   // 이름을 바꿔 저장하면 새 문제셋(복사본)
+  setId = id; store.set('qs.setId', id);
   await loadSets();
-  if (!quiet) msg($('#edit-msg'), `✔ 문제셋 '${name}'에 저장했어요. (${count}문항) 진행하려면 "▶ 이 문항으로 진행하기"를 눌러 주세요.`, 'ok');
+  if (!quiet) msg($('#edit-msg'), `✔ 문제셋 '${name}'에 저장했어요. (${questions.length}문항) 앞으로 고치는 내용도 여기에 자동 저장돼요.`, 'ok');
 }
 $('#set-save').addEventListener('click', () => saveSet().catch(err => msg($('#edit-msg'), err.message, 'err')));
+const midShow = () => game && game.q_index >= 0 && game.phase !== 'lobby';
 $('#set-pick').addEventListener('change', async e => {
   const id = Number(e.target.value) || null;
-  if (setDirty() && !confirm('편집기에 저장 안 한 내용이 있어요. 그래도 다른 문제셋을 열까요?')) { e.target.value = setId || ''; return; }
-  if (!id) { newSet(); return; }
+  if (!id) { setId = null; store.set('qs.setId', ''); renderSets(); return; }
+  if (!setId && questions.length && !confirm('지금 문항 목록은 문제셋으로 저장돼 있지 않아요. 그래도 다른 문제셋을 열까요?')) { e.target.value = ''; return; }
+  if (midShow() && !confirm('진행 중이에요. 문제셋을 열면 진행 목록이 그 문제셋으로 바뀌어요. 계속할까요?')) { e.target.value = setId || ''; return; }
   try {
     const st = await rpc('host_get_set', { p_pin: pin, p_id: id });
+    const qs = parseQuestions(st.body || '');
     setId = id; store.set('qs.setId', id);
-    $('#editor').value = st.body; store.set('qs.editor', st.body); setSaved = st.body;
-    $('#set-name').value = st.name; renderSets();
-    msg($('#edit-msg'), `'${st.name}' 문제셋을 열었어요. 진행하려면 "▶ 이 문항으로 진행하기"를 눌러 주세요.`, 'ok');
-  } catch (err) { msg($('#edit-msg'), err.message, 'err'); }
+    questions = qs; sel = null; renderDetail(); renderSets();
+    await commitNow(`'${st.name}' 문제셋을 열었어요. (${qs.length}문항)`, false);
+  } catch (err) { e.target.value = setId || ''; msg($('#edit-msg'), err.message, 'err'); }
 });
-function newSet() {
-  setId = null; store.set('qs.setId', ''); setSaved = '';
-  $('#set-name').value = ''; $('#editor').value = ''; store.set('qs.editor', '');
-  renderSets(); $('#set-name').focus();
-  msg($('#edit-msg'), '새 문제셋이에요. 이름을 적고 문항을 쓴 다음 "💾 문제셋 저장"을 눌러 주세요.', 'ok');
-}
 $('#set-new').addEventListener('click', () => {
-  if (setDirty() && !confirm('편집기에 저장 안 한 내용이 있어요. 그래도 새로 만들까요?')) return;
-  newSet();
+  if (!setId && questions.length && !confirm('지금 문항 목록은 문제셋으로 저장돼 있지 않아요. 비우고 새로 만들까요?\n(먼저 이름을 적고 💾 저장을 누르면 보관돼요)')) return;
+  setId = null; store.set('qs.setId', '');
+  questions = []; sel = null; badIdx = null;
+  renderSets(); renderQList(); renderDetail(); syncText(); setSaveState('');
+  $('#set-name').focus();
+  msg($('#edit-msg'), '새 문제셋이에요. 이름을 적고 ＋ 추가로 문항을 만든 다음 💾 저장을 눌러 주세요.', 'ok');
 });
 $('#set-del').addEventListener('click', async () => {
   const cur = sets.find(x => x.id === setId); if (!cur) return;
-  if (!confirm(`'${cur.name}' 문제셋을 지울까요? (지금 진행 중인 문항 목록은 그대로예요)`)) return;
-  try { await rpc('host_delete_set', { p_pin: pin, p_id: cur.id }); setId = null; store.set('qs.setId', ''); setSaved = null; await loadSets(); $('#set-name').value = '';
+  if (!confirm(`'${cur.name}' 문제셋을 지울까요? (지금 문항 목록은 그대로예요)`)) return;
+  try { await rpc('host_delete_set', { p_pin: pin, p_id: cur.id }); setId = null; store.set('qs.setId', ''); await loadSets();
     msg($('#edit-msg'), `'${cur.name}' 문제셋을 지웠어요.`, 'ok'); }
   catch (err) { msg($('#edit-msg'), err.message, 'err'); }
 });
@@ -353,16 +324,7 @@ async function pdfPages(file, onPage) {
     await onPage(c, i, doc.numPages);
   }
 }
-// 편집기 끝(또는 커서 자리)에 글 넣기
-function insertEditor(text, atEnd = false) {
-  const ed = $('#editor');
-  const pos = atEnd ? ed.value.length : (ed.selectionStart ?? ed.value.length);
-  const before = ed.value.slice(0, pos);
-  const pre = !before ? '' : before.endsWith('\n\n') ? '' : before.endsWith('\n') ? (atEnd ? '\n' : '') : (atEnd ? '\n\n' : '\n');
-  ed.value = before + pre + text + ed.value.slice(pos);
-  store.set('qs.editor', ed.value);
-}
-const deckBlock = (id, n) => `S: 장표 ${n}\n장표: #${id}\n`;
+const deckOf = (id, n) => ({ kind: 'slide', text: `장표 ${n}`, lines: [], image: `#${id}`, full: true });
 
 // 장표 올리기 (PDF 여러 장 또는 그림 여러 장) → 문항 끝에 장표 발표로 추가
 async function uploadDeck(files, out) {
@@ -380,27 +342,14 @@ async function uploadDeck(files, out) {
       }
     }
     const start = questions.filter(q => q.full).length;
-    insertEditor(ids.map((id, i) => deckBlock(id, start + i + 1)).join('\n'), true);
-    msg(out, `✔ 장표 ${ids.length}장을 문항 끝에 추가했어요. 문항 탭에서 "문항 저장"을 눌러 주세요.`, 'ok');
+    addQuestions(ids.map((id, i) => deckOf(id, start + i + 1)), false);
+    msg(out, `✔ 장표 ${ids.length}장을 문항 목록에 추가했어요.`, 'ok');
     loadGallery();
   } catch (err) { msg(out, (ids.length ? `${ids.length}장까지 올렸어요. ` : '') + err.message, 'err'); }
 }
 $('#deck-pick').addEventListener('change', e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) uploadDeck(f, $('#edit-msg')); });
 $('#gal-deck').addEventListener('change', e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) uploadDeck(f, $('#gal-msg')); });
 
-// 칠판용 이미지 한 장 → 커서 자리에 '이미지: #번호'
-$('#img-pick').addEventListener('change', async e => {
-  const f = e.target.files?.[0];
-  e.target.value = '';
-  if (!f) return;
-  try {
-    msg($('#edit-msg'), '이미지를 올리는 중…', 'ok');
-    const id = await putImage(await createImageBitmap(f), f.name);
-    insertEditor(`이미지: #${id}\n`);
-    msg($('#edit-msg'), `✔ 이미지 #${id} 를 넣었어요. 발표(S:) 문항 안에 '이미지: #${id}' 줄이 있으면 칠판에 함께 나와요. "문항 저장"을 눌러 주세요.`, 'ok');
-    loadGallery();
-  } catch (err) { msg($('#edit-msg'), err.message, 'err'); }
-});
 // 갤러리에서 여러 장 올리기 (문항에는 안 넣고 보관만)
 $('#gal-pick').addEventListener('change', async e => {
   const files = [...e.target.files]; e.target.value = '';
@@ -416,7 +365,7 @@ $('#gal-pick').addEventListener('change', async e => {
 
 // 갤러리 목록
 let media = [];
-const usedIn = id => questions.map((q, i) => (q.image === `#${id}` ? i + 1 : 0)).filter(Boolean);
+const usedIn = id => questions.map((q, i) => ([q.image, q.audio?.src, q.chorus?.src].includes(`#${id}`) ? i + 1 : 0)).filter(Boolean);
 async function loadGallery() {
   if (!pin) return;
   try { media = await rpc('host_list_media', { p_pin: pin }) || []; } catch (err) { msg($('#gal-msg'), err.message, 'err'); return; }
@@ -429,14 +378,14 @@ function renderGallery() {
     const used = usedIn(m.id);
     return `<li class="gal-item" data-id="${m.id}">
       <button class="gal-thumb" type="button" data-act="view" title="크게 보기">
-        ${m.thumb ? `<img src="${m.thumb}" alt="" loading="lazy">` : '<span class="gal-nothumb">미리보기 없음<br>(눌러서 보기)</span>'}
+        ${m.audio ? '<span class="gal-nothumb gal-audio">🎵<br>노래 구간<br>(눌러서 듣기)</span>' : m.thumb ? `<img src="${m.thumb}" alt="" loading="lazy">` : '<span class="gal-nothumb">미리보기 없음<br>(눌러서 보기)</span>'}
         <span class="gal-id">#${m.id}</span>
       </button>
       <div class="gal-meta"><span class="gal-name" title="${esc(m.name || '')}">${esc(m.name || '이름 없음')}</span>
         <span class="muted">${m.kb}KB${used.length ? ` · ${used.join(', ')}번 문항에 사용 중` : ''}</span></div>
       <div class="gal-btns">
-        <button class="btn ghost sm" type="button" data-act="board">칠판에 넣기</button>
-        <button class="btn ghost sm" type="button" data-act="deck">장표로 넣기</button>
+        ${m.audio ? '' : `<button class="btn ghost sm" type="button" data-act="board">칠판에 넣기</button>
+        <button class="btn ghost sm" type="button" data-act="deck">장표로 넣기</button>`}
         <button class="btn ghost sm gal-del" type="button" data-act="del" aria-label="삭제">삭제</button>
       </div>
     </li>`;
@@ -451,17 +400,18 @@ $('#gallery').addEventListener('click', async e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const id = Number(b.closest('.gal-item').dataset.id);
   const m = media.find(x => x.id === id);
+  if (b.dataset.act === 'view' && m?.audio) { playSong({ src: `#${id}` }, `gal:${Date.now()}`); return; }
   if (b.dataset.act === 'view') {
     $('#lb-img').removeAttribute('src'); $('#lb-cap').textContent = `#${id} · 불러오는 중…`;
     $('#lightbox').classList.remove('hidden');
     try { $('#lb-img').src = await fullImage(id); $('#lb-cap').textContent = `#${id} · ${m?.name || ''}`; }
     catch (err) { $('#lb-cap').textContent = err.message; }
   } else if (b.dataset.act === 'board') {
-    insertEditor(`S: ${m?.name?.replace(/\.[a-z]+$/i, '') || '설명'}\n이미지: #${id}\n`, true);
-    msg($('#gal-msg'), `✔ 칠판 발표로 문항 끝에 추가했어요. 문항 탭에서 글을 다듬고 "문항 저장"을 눌러 주세요.`, 'ok');
+    addQuestions([{ kind: 'slide', text: m?.name?.replace(/\.[a-z]+$/i, '') || '설명', lines: [], image: `#${id}` }], false);
+    msg($('#gal-msg'), `✔ 칠판 발표로 문항 목록에 추가했어요. 문항 탭에서 글을 다듬어 주세요.`, 'ok');
   } else if (b.dataset.act === 'deck') {
-    insertEditor(deckBlock(id, questions.filter(q => q.full).length + 1), true);
-    msg($('#gal-msg'), `✔ 장표로 문항 끝에 추가했어요. 문항 탭에서 "문항 저장"을 눌러 주세요.`, 'ok');
+    addQuestions([deckOf(id, questions.filter(q => q.full).length + 1)], false);
+    msg($('#gal-msg'), `✔ 장표로 문항 목록에 추가했어요.`, 'ok');
   } else if (b.dataset.act === 'del') {
     const used = usedIn(id);
     if (!confirm(`#${id} 이미지를 지울까요?${used.length ? `\n${used.join(', ')}번 문항에서 쓰고 있어서 그 문항엔 그림이 안 나와요.` : ''}`)) return;
@@ -673,6 +623,10 @@ try { const t = localStorage.getItem('qs.hosttab'); if (t) document.querySelecto
 // ---------- 화면 설정 (정답 공개 방식 · 대기 화면 문구) ----------
 function syncSettings(g) {
   syncQr(g);
+  const q = g.question, live = q && ['question', 'closed', 'reveal'].includes(g.phase);
+  const hasSong = live && (q.audio?.src || (g.phase === 'reveal' && q.chorus?.src));
+  $('#song-group').classList.toggle('hidden', !hasSong);
+  if (hasSong) $('#song-what').textContent = g.phase === 'reveal' && q.chorus?.src ? '지금은 싸비가 나와요' : '지금은 도입부가 나와요';
   document.querySelectorAll('input[name="auto-reveal"]').forEach(r => { r.checked = (r.value === '1') === !!g.auto_reveal; });
   const rv = g.question?.reveal, note = $('#rv-note');
   if (note) note.textContent = rv && g.q_index >= 0 && g.question?.kind !== 'slide' && g.question?.kind !== 'game'
@@ -697,6 +651,9 @@ $('#lobby-save').addEventListener('click', async () => {
   msg($('#msg'), '✔ 대기 화면 문구를 바꿨어요', 'ok');
 });
 
+// ---------- 노래 다시 듣기 ----------
+$('#song-replay').addEventListener('click', () => act(() => rpc('host_replay_audio', { p_pin: pin })));
+
 // ---------- 진행 중 입장 QR 팝업 ----------
 $('#qr-toggle').addEventListener('click', () => act(() => rpc('host_set_qr', { p_pin: pin, p_on: !game?.show_qr })));
 function syncQr(g) {
@@ -713,4 +670,428 @@ $('#ppl').addEventListener('click', e => {
   const b = e.target.closest('[data-spot]');
   if (!b) return;
   setSpot(game?.spotlight === b.dataset.spot ? null : b.dataset.spot);
+});
+
+
+// =====================================================================
+// 문항 상세 편집 (목록에서 문항을 누르면 아래에 폼이 열려요)
+// =====================================================================
+let sel = null, badIdx = null, commitTimer = null, commitSeq = 0;
+const T_KINDS = [['quiz', '정답 퀴즈 (객관식)'], ['typed', '주관식 (직접 적기)'], ['ox', 'OX 퀴즈'], ['poll', '투표'], ['slide', '발표(칠판)'], ['deck', '장표(화면 가득)'],
+                 ['order', '미니게임 · 숫자 순서'], ['reaction', '미니게임 · 반응속도'], ['tap', '미니게임 · 광클']];
+const typeOf = q => q.kind === 'game' ? q.game : q.kind === 'slide' ? (q.full ? 'deck' : 'slide') : kindOf(q);   // kindOf: quiz·typed·ox·poll
+function blankOf(t) {
+  if (t === 'deck') return { kind: 'slide', text: '장표', lines: [], full: true };
+  const q = parseQuestions(TEMPLATES[t])[0];
+  if (t === 'song' || t === 'songw') q.audio = { src: '' };     // 노래를 넣기 전엔 '노래를 넣어 주세요'로 안내
+  return q;
+}
+function syncText() { const t = questions.length ? toText(questions) : ''; if ($('#editor').value !== t) $('#editor').value = t; }
+function setSaveState(t, kind = '') { const el = $('#save-state'); el.textContent = t; el.className = `save-state ${kind}`; }
+
+// 입력 칸을 고칠 때 쓰는 친절한 검사 (나머지는 parseQuestions 가 확인)
+function checkOne(q, i) {
+  const n = `${i + 1}번 문항`, t = typeOf(q);
+  if (q.kind === 'slide') {
+    if (t === 'deck' && !q.image) return `${n}: 장표 그림을 골라 주세요.`;
+    return null;
+  }
+  if (q.kind === 'game') return null;
+  if (!String(q.text || '').trim()) return `${n}: 문제를 적어 주세요.`;
+  if (q.audio && !q.audio.src) return `${n}: 노래를 넣어 주세요 (MP3 올리기 또는 유튜브 링크).`;
+  if (q.audio?.src && !/^#\d+$/.test(q.audio.src) && !ytId(q.audio.src)) return `${n}: 유튜브 주소를 확인해 주세요.`;
+  if (q.chorus && !q.chorus.src) return `${n}: 싸비를 넣거나 '싸비 빼기'를 눌러 주세요.`;
+  if (q.chorus?.src && !/^#\d+$/.test(q.chorus.src) && !ytId(q.chorus.src)) return `${n}: 싸비 유튜브 주소를 확인해 주세요.`;
+  if (t === 'typed') return (q.answers || []).some(a => String(a).trim()) ? null : `${n}: 정답을 적어 주세요.`;
+  if (t !== 'ox') {
+    if (q.options.some(o => !String(o).trim())) return `${n}: 비어 있는 보기가 있어요. 채우거나 ✕로 지워 주세요.`;
+    if (t === 'quiz' && (q.answer == null || q.answer >= q.options.length)) return `${n}: 정답 보기를 골라 주세요 (보기 왼쪽 동그라미).`;
+  }
+  return null;
+}
+function validate() {
+  for (let i = 0; i < questions.length; i++) { const e = checkOne(questions[i], i); if (e) return { i, e }; }
+  try { parseQuestions(toText(questions)); } catch (err) {
+    const m = String(err.message).match(/^(\d+)번/); return { i: m ? Number(m[1]) - 1 : null, e: err.message };
+  }
+  return null;
+}
+// 고친 뒤 0.7초 동안 손을 떼면 저장
+function scheduleCommit() {
+  clearTimeout(commitTimer);
+  syncText();
+  setSaveState('고치는 중…');
+  commitTimer = setTimeout(() => commitNow(), 700);
+}
+async function commitNow(okText = '', saveToSet = true) {
+  clearTimeout(commitTimer);
+  syncText();
+  if (!questions.length) { renderQList(); setSaveState(''); return; }
+  const bad = validate();
+  badIdx = bad ? bad.i : null;
+  renderQList();
+  if (bad) { setSaveState('⚠ 저장 안 됨', 'err'); msg($('#edit-msg'), bad.e, 'err'); return; }
+  const qs = parseQuestions(toText(questions));
+  const seq = ++commitSeq;
+  setSaveState('저장 중…');
+  try {
+    await rpc('host_load_questions', { p_pin: pin, p_questions: qs });
+    if (saveToSet && setId) { try { await saveSet(true); } catch {} }
+    if (seq !== commitSeq) return;
+    updateControls();
+    setSaveState(`✓ 저장됨${setId ? ' · 문제셋에도' : ''}`, 'ok');
+    if (okText) msg($('#edit-msg'), okText, 'ok'); else if ($('#edit-msg').classList.contains('err')) msg($('#edit-msg'), '');
+  } catch (err) { setSaveState('⚠ 저장 안 됨', 'err'); msg($('#edit-msg'), err.message, 'err'); }
+}
+function addQuestions(list, select = true) {
+  const at = sel != null ? sel + 1 : questions.length;
+  questions.splice(at, 0, ...list);
+  if (select) sel = at;
+  renderQList(); renderDetail();
+  if (select) $('#qdetail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  commitNow(list.length > 1 ? `✔ ${list.length}개 문항을 추가했어요.` : `✔ ${at + 1}번에 문항을 추가했어요. 아래에서 내용을 고쳐 주세요.`);
+}
+
+// 목록에서 문항 누르기 → 상세 열기 (버튼·손잡이 누른 건 빼고)
+$('#qlist').addEventListener('click', e => {
+  if (e.target.closest('button, .grip')) return;
+  const li = e.target.closest('li[data-pick]'); if (!li) return;
+  const i = Number(li.dataset.pick);
+  sel = sel === i ? null : i;
+  renderQList(); renderDetail();
+  if (sel != null) $('#qdetail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+});
+
+const optRow = (q, o, k, quiz) => `
+  <div class="qd-opt">
+    ${quiz ? `<label class="qd-ans" title="정답으로 정하기"><input type="radio" name="qd-ans" value="${k}" ${q.answer === k ? 'checked' : ''}><span>${LABELS[k]}</span></label>`
+           : `<span class="qd-ans no">${LABELS[k]}</span>`}
+    <input data-opt="${k}" value="${esc(o)}" maxlength="80" placeholder="보기 ${k + 1}">
+    <button class="qd-x" type="button" data-delopt="${k}" ${q.options.length <= 2 ? 'disabled' : ''} aria-label="보기 ${k + 1} 지우기">✕</button>
+  </div>`;
+const sel3 = (f, val, opts) => `<select data-f="${f}">${opts.map(([v, l]) => `<option value="${v}" ${String(val ?? '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+
+function imagePicker(q, deck) {
+  const id = /^#\d+$/.test(q.image || '') ? Number(q.image.slice(1)) : null;
+  const m = id ? media.find(x => x.id === id) : null;
+  const pv = q.image ? (m?.thumb ? `<img src="${m.thumb}" alt="">` : `<span class="qd-img-ph" data-loadimg="${esc(q.image)}">${esc(q.image)}</span>`)
+                     : `<span class="qd-img-ph">${deck ? '장표 그림이 없어요' : '그림 없음'}</span>`;
+  return `<div class="qd-img ${deck ? 'deck' : ''}">
+    <div class="qd-img-pv">${pv}</div>
+    <div class="qd-img-btns">
+      <button class="btn ghost sm" type="button" data-imgact="pick">🖼 갤러리에서 고르기</button>
+      <label class="btn ghost sm img-btn">⬆ 새로 올리기<input type="file" data-imgact="up" accept="image/*${deck ? ',application/pdf,.pdf' : ''}" hidden></label>
+      ${q.image ? '<button class="btn ghost sm" type="button" data-imgact="clear">빼기</button>' : ''}
+    </div>
+  </div>`;
+}
+
+function renderDetail() {
+  const box = $('#qdetail');
+  if (sel == null || !questions[sel]) { sel = null; box.innerHTML = '<p class="muted qd-empty">문항을 누르면 여기에서 자세히 고칠 수 있어요.</p>'; box.classList.remove('open'); return; }
+  const q = questions[sel], t = typeOf(q), running = game && game.q_index === sel && ['question', 'closed', 'reveal'].includes(game.phase);
+  box.classList.add('open');
+  let body = '';
+  if (t === 'quiz' || t === 'poll') {
+    body = `
+      <label class="qd-field"><span>문제</span><textarea data-f="text" rows="2" maxlength="300" placeholder="문제를 적어 주세요">${esc(q.text)}</textarea></label>
+      <div class="qd-field"><span>보기 ${t === 'quiz' ? '<small class="muted">· 동그라미를 눌러 정답 고르기</small>' : ''}</span>
+        <div class="qd-opts">${q.options.map((o, k) => optRow(q, o, k, t === 'quiz')).join('')}</div>
+        ${q.options.length < 6 ? '<button class="btn ghost sm qd-addopt" type="button" data-addopt>＋ 보기 추가</button>' : ''}
+      </div>`;
+  } else if (t === 'typed') {
+    body = `
+      <label class="qd-field"><span>문제</span><textarea data-f="text" rows="2" maxlength="300" placeholder="예: 이 노래의 제목은?">${esc(q.text)}</textarea></label>
+      <label class="qd-field"><span>정답 <small class="muted">· 여러 표기를 / 로 나눠 적으면 모두 정답 (띄어쓰기·대소문자 무시)</small></span>
+        <input data-f="answers" maxlength="300" value="${esc((q.answers || []).join(' / '))}" placeholder="예: 좋은 날 / Good Day"></label>`;
+  } else if (t === 'ox') {
+    body = `
+      <label class="qd-field"><span>문제</span><textarea data-f="text" rows="2" maxlength="300">${esc(q.text)}</textarea></label>
+      <div class="qd-field"><span>정답</span><div class="qd-ox">
+        <label><input type="radio" name="qd-ox" value="0" ${q.answer === 0 ? 'checked' : ''}><b>O</b></label>
+        <label><input type="radio" name="qd-ox" value="1" ${q.answer === 1 ? 'checked' : ''}><b>X</b></label></div></div>`;
+  } else if (t === 'slide') {
+    body = `
+      <label class="qd-field"><span>칠판 제목</span><input data-f="text" maxlength="100" value="${esc(q.text)}"></label>
+      <label class="qd-field"><span>설명 <small class="muted">· 한 줄씩, - 로 시작하면 글머리표 (12줄까지)</small></span>
+        <textarea data-f="lines" rows="5" placeholder="여기에 설명을 한 줄씩 적어요">${esc((q.lines || []).join('\n'))}</textarea></label>
+      <div class="qd-field"><span>그림 <small class="muted">· 칠판 오른쪽에 함께 나와요</small></span>${imagePicker(q, false)}</div>`;
+  } else if (t === 'deck') {
+    body = `
+      <div class="qd-field"><span>장표 <small class="muted">· 스크린 가득 보여요. PDF를 올리면 장마다 문항이 하나씩 추가돼요</small></span>${imagePicker(q, true)}</div>
+      <label class="qd-field"><span>목록 이름 <small class="muted">· 스크린엔 안 보여요</small></span><input data-f="text" maxlength="100" value="${esc(q.text)}"></label>`;
+  } else {
+    body = `<label class="qd-field"><span>제목 <small class="muted">· 비우면 "${GAMES[t].name}"</small></span><input data-f="gtext" maxlength="60" value="${esc(q.text === GAMES[t].name ? '' : q.text)}" placeholder="${GAMES[t].name}"></label>
+      <p class="muted qd-hint">${GAMES[t].hint}</p>`;
+    if (t === 'order') body += `<div class="qd-grid">
+      <label class="qd-field"><span>판 크기</span>${sel3('size', q.size ?? 4, [['3', '3×3 (1~9)'], ['4', '4×4 (1~16)'], ['5', '5×5 (1~25)'], ['6', '6×6 (1~36)']])}</label>
+      <label class="qd-field"><span>제한시간(초)</span><input data-f="time_limit" type="number" min="10" max="180" value="${q.time_limit ?? ''}" placeholder="기본"></label></div>`;
+    if (t === 'tap') body += `<label class="qd-field qd-short"><span>누르는 시간(초)</span><input data-f="duration" type="number" min="3" max="60" value="${q.duration ?? 10}"></label>`;
+  }
+  if (['quiz', 'ox', 'poll', 'typed'].includes(t)) body += `<div class="qd-field"><span>그림 <small class="muted">· 문제와 함께 스크린에 크게 나와요 (선택)</small></span>${imagePicker(q, false)}</div>`;
+  if (['quiz', 'ox', 'poll', 'typed'].includes(t)) body += songEditor(q);
+  if (['quiz', 'ox', 'poll', 'typed'].includes(t)) body += `
+    <div class="qd-grid">
+      <label class="qd-field"><span>제한시간(초)</span><input data-f="time_limit" type="number" min="0" max="600" value="${q.time_limit ?? ''}" placeholder="${t === 'poll' ? '없음' : '20'}"></label>
+      ${t === 'typed' ? '' : `<label class="qd-field"><span>누가 뭘 골랐는지</span>${sel3('show', q.show || '', [['', `기본 (${t === 'poll' ? '실시간' : '정답 때'})`], ['live', '실시간 공개'], ['reveal', '정답 때 공개'], ['hidden', '비공개 (인원수만)']])}</label>`}
+      <label class="qd-field"><span>정답 공개</span>${sel3('reveal', q.reveal || '', [['', `기본 (${game?.auto_reveal ? '자동' : '수동'})`], ['auto', '⚡ 자동 (시간 끝나면)'], ['manual', '✋ 수동 (버튼)']])}</label>
+    </div>`;
+  box.innerHTML = `
+    <div class="qd-head">
+      <b class="qd-num">${sel + 1}번</b>
+      <select class="qd-type" data-type aria-label="문항 종류">${T_KINDS.map(([v, l]) => `<option value="${v}" ${v === t ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <span class="qd-sp"></span>
+      <button class="btn ghost sm" type="button" data-qact="dup">복제</button>
+      <button class="btn ghost sm qd-del" type="button" data-qact="del">삭제</button>
+      <button class="btn ghost sm" type="button" data-qact="close" aria-label="닫기">닫기</button>
+    </div>
+    ${running ? '<p class="qd-note">지금 스크린에 나오는 문항이에요. 고친 내용은 다음에 이 문항을 시작할 때 반영돼요.</p>' : ''}
+    <div class="qd-body">${body}</div>`;
+  box.querySelectorAll('[data-loadimg]').forEach(async el => {
+    const src = el.dataset.loadimg;
+    try { const u = /^#\d+$/.test(src) ? await fullImage(Number(src.slice(1))) : src; if (u) el.outerHTML = `<img src="${u}" alt="">`; } catch {}
+  });
+}
+
+// 입력 → 바로 문항에 반영 (폼은 다시 그리지 않아서 입력이 끊기지 않아요)
+$('#qdetail').addEventListener('input', e => {
+  if (sel == null) return;
+  const q = questions[sel], el = e.target;
+  if (el.dataset.opt != null) q.options[Number(el.dataset.opt)] = el.value.replace(/^\s+/, '');
+  else if (el.dataset.f) {
+    const f = el.dataset.f, v = el.value;
+    if (f === 'text') q.text = v.replace(/\n{2,}/g, '\n').replace(/^\s+/, '');
+    else if (f === 'gtext') q.text = v.trim() || GAMES[q.game].name;
+    else if (f === 'lines') q.lines = v.split('\n').map(x => x.trim()).filter(Boolean).slice(0, 12).map(x => x.slice(0, 120));
+    else if (f === 'time_limit' || f === 'duration' || f === 'size') { if (v === '') delete q[f]; else q[f] = Number(v); }
+    else if (f === 'show' || f === 'reveal') { if (v) q[f] = v; else delete q[f]; }
+    else if (f === 'answers') q.answers = v.split(/\s*[\/|]\s*/).map(x => x.trim()).filter(Boolean).slice(0, 10);
+    else if (/^(audio|chorus)\.(src|start|len)$/.test(f)) {
+      const [slot, k] = f.split('.'); q[slot] = q[slot] || { src: '' };
+      if (k === 'src') {
+        q[slot].src = v.trim();
+        const tb = $('#qdetail').querySelector(`button[data-song="test"][data-slot="${slot}"]`); if (tb) tb.disabled = !ytId(v);
+      }
+      else if (v === '') delete q[slot][k]; else q[slot][k] = Number(v);
+    }
+  } else if (el.name === 'qd-ans') q.answer = Number(el.value);
+  else if (el.name === 'qd-ox') q.answer = Number(el.value);
+  else return;
+  renderQList();
+  scheduleCommit();
+});
+$('#qdetail').addEventListener('change', async e => {
+  if (sel == null) return;
+  const el = e.target;
+  if (el.matches('[data-type]')) {
+    const old = questions[sel], nq = blankOf(el.value);
+    const keepText = old.text && !(old.kind === 'game') && !(el.value in GAMES);
+    if (keepText && nq.kind !== 'game') nq.text = old.text;
+    if (old.options?.length && (nq.kind === 'quiz' || nq.kind === 'poll') && !nq.ox && !old.ox) nq.options = old.options.slice(0, 6);
+    if (nq.kind === 'quiz' && !nq.ox && (nq.answer == null || nq.answer >= nq.options.length)) nq.answer = 0;
+    if (old.image && nq.kind === 'slide') nq.image = old.image;
+    if (nq.kind !== 'slide' && nq.kind !== 'game') { if (old.audio) nq.audio = old.audio; if (old.chorus) nq.chorus = old.chorus; }
+    if (nq.typed && old.typed) nq.answers = old.answers;
+    if (nq.typed && !old.typed && old.kind === 'quiz' && !old.ox && old.options?.[old.answer]) nq.answers = [old.options[old.answer]];
+    questions[sel] = nq; renderQList(); renderDetail(); scheduleCommit();
+  } else if (el.matches('[data-imgact="up"]')) {
+    const files = [...el.files]; el.value = '';
+    if (!files.length) return;
+    const q = questions[sel];
+    try {
+      if (files.some(f => /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name))) {
+        // 장표 자리에서 PDF를 올리면: 첫 장은 이 문항에, 나머지는 바로 뒤에 새 장표로
+        const ids = [];
+        await pdfPages(files[0], async (c, i, n) => { msg($('#edit-msg'), `PDF 장표 변환 중… ${i} / ${n}`, 'ok'); ids.push(await putImage(c, `${files[0].name} · ${i}쪽`, 1920)); });
+        q.image = `#${ids[0]}`;
+        const start = questions.filter(x => x.full).length;
+        questions.splice(sel + 1, 0, ...ids.slice(1).map((id, k) => deckOf(id, start + k + 1)));
+        msg($('#edit-msg'), `✔ 장표 ${ids.length}장을 넣었어요.`, 'ok');
+      } else {
+        msg($('#edit-msg'), '그림을 올리는 중…', 'ok');
+        q.image = `#${await putImage(await createImageBitmap(files[0]), files[0].name, typeOf(q) === 'deck' ? 1920 : 1600)}`;
+        msg($('#edit-msg'), '✔ 그림을 넣었어요.', 'ok');
+      }
+      await loadGallery(); renderQList(); renderDetail(); commitNow();
+    } catch (err) { msg($('#edit-msg'), err.message, 'err'); }
+  }
+});
+$('#qdetail').addEventListener('click', e => {
+  if (sel == null) return;
+  const b = e.target.closest('[data-qact],[data-addopt],[data-delopt],[data-imgact]'); if (!b) return;
+  const q = questions[sel];
+  if (b.dataset.qact === 'close') { sel = null; renderQList(); renderDetail(); }
+  else if (b.dataset.qact === 'dup') { addQuestions([JSON.parse(JSON.stringify(q))]); }
+  else if (b.dataset.qact === 'del') {
+    if (game && game.q_index === sel && ['question', 'closed'].includes(game.phase)) return msg($('#edit-msg'), '진행 중인 문항은 지울 수 없어요.', 'err');
+    if (!confirm(`${sel + 1}번 문항을 지울까요?`)) return;
+    questions.splice(sel, 1); sel = null; renderQList(); renderDetail(); commitNow('문항을 지웠어요.');
+  }
+  else if (b.dataset.addopt != null) { q.options.push(''); renderDetail(); $('#qdetail').querySelector(`[data-opt="${q.options.length - 1}"]`)?.focus(); scheduleCommit(); }
+  else if (b.dataset.delopt != null) {
+    const k = Number(b.dataset.delopt); q.options.splice(k, 1);
+    if (q.kind === 'quiz' && q.answer != null) { if (q.answer === k) q.answer = undefined; else if (q.answer > k) q.answer--; }
+    renderDetail(); renderQList(); scheduleCommit();
+  }
+  else if (b.dataset.imgact === 'clear') { delete q.image; renderDetail(); renderQList(); scheduleCommit(); }
+  else if (b.dataset.imgact === 'pick') openPicker(id => { q.image = `#${id}`; renderDetail(); renderQList(); commitNow('✔ 그림을 넣었어요.'); });
+});
+
+// 갤러리에서 고르기 (작은 창)
+let pickCb = null;
+async function openPicker(cb) {
+  pickCb = cb;
+  if (!media.length) await loadGallery();
+  const pics = media.filter(m => !m.audio);
+  $('#picker-grid').innerHTML = pics.length ? pics.map(m => `<button type="button" class="pk-item" data-pk="${m.id}" title="${esc(m.name || '')}">
+      ${m.thumb ? `<img src="${m.thumb}" alt="">` : '<span class="gal-nothumb">미리보기 없음</span>'}<span class="gal-id">#${m.id}</span></button>`).join('')
+    : '<p class="muted">아직 올린 그림이 없어요. "새로 올리기"를 눌러 주세요.</p>';
+  $('#picker').classList.remove('hidden');
+}
+$('#picker').addEventListener('click', e => {
+  const b = e.target.closest('[data-pk]');
+  if (b) { $('#picker').classList.add('hidden'); pickCb?.(Number(b.dataset.pk)); return; }
+  if (e.target === $('#picker') || e.target.closest('[data-pkclose]')) $('#picker').classList.add('hidden');
+});
+
+
+// =====================================================================
+// 노래 넣기: 유튜브 링크 또는 MP3 에서 구간 잘라 올리기 (도입부 = 문제 낼 때, 싸비 = 정답 공개 때)
+// =====================================================================
+let songBuf = null, songFileName = '', cutSlot = null;    // 마지막으로 연 MP3 (도입부·싸비를 같은 파일에서 자를 수 있게)
+function songSlot(q, slot) {
+  const a = q[slot], title = slot === 'audio' ? '🎵 도입부 <small class="muted">· 문제가 시작되면 스크린에서 나와요</small>' : '🎶 싸비 <small class="muted">· 정답 공개 때 나와요 (선택)</small>';
+  if (!a) return `<div class="song-slot empty"><span class="ss-title">${title}</span>
+      <div class="ss-btns"><button class="btn ghost sm" type="button" data-song="add" data-slot="${slot}">＋ ${slot === 'audio' ? '노래' : '싸비'} 넣기</button></div></div>`;
+  const yt = ytId(a.src), mp3 = /^#\d+$/.test(a.src);
+  const mode = a.mode || (yt || (a.src && !mp3) ? 'yt' : 'mp3');
+  const cutting = cutSlot === slot && songBuf;
+  return `<div class="song-slot" data-slot="${slot}">
+    <div class="ss-head"><span class="ss-title">${title}</span>
+      <div class="seg ss-seg"><label><input type="radio" name="sm-${slot}" data-song="mode" data-slot="${slot}" value="mp3" ${mode === 'mp3' ? 'checked' : ''}><span>MP3</span></label><label><input type="radio" name="sm-${slot}" data-song="mode" data-slot="${slot}" value="yt" ${mode === 'yt' ? 'checked' : ''}><span>유튜브</span></label></div>
+      <button class="btn ghost sm ss-del" type="button" data-song="del" data-slot="${slot}">${slot === 'audio' ? '노래 빼기' : '싸비 빼기'}</button></div>
+    ${mode === 'yt' ? `
+      <div class="qd-grid ss-yt">
+        <label class="qd-field ss-url"><span>유튜브 주소</span><input data-f="${slot}.src" value="${esc(mp3 ? '' : a.src)}" placeholder="https://youtu.be/..."></label>
+        <label class="qd-field"><span>시작 (초)</span><input data-f="${slot}.start" type="number" min="0" step="0.5" value="${a.start ?? ''}" placeholder="0"></label>
+        <label class="qd-field"><span>들려줄 길이 (초)</span><input data-f="${slot}.len" type="number" min="2" max="60" value="${a.len ?? ''}" placeholder="10"></label>
+      </div>
+      <div class="ss-btns"><button class="btn ghost sm" type="button" data-song="test" data-slot="${slot}" ${yt ? '' : 'disabled'}>▶ 이 구간 미리 듣기</button>
+        <span class="muted ss-tip">${a.src && !yt ? '⚠ 유튜브 주소가 아니에요' : '영상에 따라 퍼가기가 막혀 있으면 안 나올 수 있어요 → 그땐 MP3로'}</span></div>`
+    : `
+      ${mp3 && !cutting ? `<div class="ss-btns"><span class="ss-have">✔ MP3 구간 ${esc(a.src)}${a.len ? ` · ${a.len}초` : ''}</span>
+          <button class="btn ghost sm" type="button" data-song="test" data-slot="${slot}">▶ 듣기</button>
+          ${songBuf ? `<button class="btn ghost sm" type="button" data-song="recut" data-slot="${slot}">✂ ${esc(songFileName)}에서 다시 자르기</button>` : ''}</div>` : ''}
+      ${cutting ? songCutter(slot) : `<div class="ss-btns">
+          <label class="btn ghost sm img-btn">🎵 MP3 파일 고르기<input type="file" data-song="file" data-slot="${slot}" accept="audio/*,.mp3,.m4a,.wav,.ogg" hidden></label>
+          ${songBuf && !mp3 ? `<button class="btn ghost sm" type="button" data-song="recut" data-slot="${slot}">✂ ${esc(songFileName)}에서 자르기</button>` : ''}
+          <span class="muted ss-tip">노래 파일을 고르면 들려줄 부분만 잘라서 올려요 (최대 30초)</span></div>`}`}
+  </div>`;
+}
+function songCutter(slot) {
+  const dur = songBuf.duration, c = cutState[slot] || (cutState[slot] = { start: slot === 'chorus' ? Math.min(60, Math.max(0, dur * 0.3)) : 0, len: slot === 'chorus' ? 15 : 10 });
+  return `<div class="cutter" data-slot="${slot}">
+    <div class="cut-file">✂ <b>${esc(songFileName)}</b> <span class="muted">(${fmtT(dur)})</span></div>
+    <input class="cut-range" type="range" min="0" max="${Math.max(0, dur - 1).toFixed(1)}" step="0.5" value="${c.start}" data-cut="start" data-slot="${slot}" aria-label="시작 위치">
+    <div class="qd-grid">
+      <label class="qd-field"><span>시작 (초)</span><input type="number" min="0" max="${dur.toFixed(1)}" step="0.5" value="${c.start}" data-cut="start" data-slot="${slot}"></label>
+      <label class="qd-field"><span>길이 (초, 최대 30)</span><input type="number" min="2" max="30" step="1" value="${c.len}" data-cut="len" data-slot="${slot}"></label>
+    </div>
+    <div class="ss-btns">
+      <button class="btn ghost sm" type="button" data-song="cutplay" data-slot="${slot}">▶ 구간 미리 듣기</button>
+      <button class="btn secondary sm" type="button" data-song="cutsave" data-slot="${slot}">✂ 이 구간으로 저장</button>
+      <button class="btn ghost sm" type="button" data-song="cutcancel" data-slot="${slot}">취소</button>
+    </div>
+  </div>`;
+}
+const cutState = {};
+const fmtT = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+function songEditor(q) {
+  return `<div class="qd-field song-ed"><span>노래 <small class="muted">· 스크린 컴퓨터 스피커로만 나와요</small></span>
+    ${songSlot(q, 'audio')}${q.audio ? songSlot(q, 'chorus') : ''}</div>`;
+}
+
+// 미리 듣기 (진행자 컴퓨터에서)
+let previewSrc = null, previewCtx = null;
+function stopPreview() { stopSong(); if (previewSrc) { try { previewSrc.stop(); } catch {} previewSrc = null; } }
+async function playBufRange(start, len) {
+  stopPreview();
+  previewCtx = previewCtx || new (window.AudioContext || window.webkitAudioContext)();
+  await previewCtx.resume();
+  const s = previewCtx.createBufferSource(); s.buffer = songBuf; s.connect(previewCtx.destination);
+  s.start(0, start, len); previewSrc = s;
+}
+// 구간을 24kHz 모노 WAV 로 (앞뒤 0.3초 페이드)
+async function cutToWav(start, len) {
+  const sr = 24000, n = Math.ceil(len * sr);
+  const off = new OfflineAudioContext(1, n, sr);
+  const src = off.createBufferSource(); src.buffer = songBuf;
+  const g = off.createGain();
+  g.gain.setValueAtTime(0, 0); g.gain.linearRampToValueAtTime(1, 0.3);
+  g.gain.setValueAtTime(1, Math.max(0.3, len - 0.4)); g.gain.linearRampToValueAtTime(0, len);
+  src.connect(g); g.connect(off.destination); src.start(0, start, len);
+  const buf = await off.startRendering();
+  const pcm = buf.getChannelData(0), bytes = new ArrayBuffer(44 + pcm.length * 2), v = new DataView(bytes);
+  const w = (o, t) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, 'RIFF'); v.setUint32(4, 36 + pcm.length * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, sr, true);
+  v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, pcm.length * 2, true);
+  for (let i = 0; i < pcm.length; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 0x7fff, true);
+  const blob = new Blob([bytes], { type: 'audio/wav' });
+  return await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+}
+$('#qdetail').addEventListener('click', async e => {
+  const b = e.target.closest('button[data-song]'); if (!b || sel == null) return;
+  const q = questions[sel], slot = b.dataset.slot, act = b.dataset.song;
+  if (act === 'add') { q[slot] = { src: '' }; renderDetail(); scheduleCommit(); }
+  else if (act === 'del') {
+    stopPreview();
+    if (slot === 'audio') { delete q.audio; delete q.chorus; } else delete q.chorus;
+    if (cutSlot === slot) cutSlot = null;
+    renderDetail(); renderQList(); scheduleCommit();
+  }
+  else if (act === 'test') { stopPreview(); playSong(q[slot], `preview:${Date.now()}`); msg($('#edit-msg'), '진행자 컴퓨터에서 미리 듣는 중이에요.', 'ok'); }
+  else if (act === 'recut') { cutSlot = slot; renderDetail(); }
+  else if (act === 'cutcancel') { stopPreview(); cutSlot = null; renderDetail(); }
+  else if (act === 'cutplay') { const c = cutState[slot]; playBufRange(c.start, c.len); }
+  else if (act === 'cutsave') {
+    const c = cutState[slot];
+    b.disabled = true; stopPreview();
+    try {
+      msg($('#edit-msg'), '구간을 자르고 올리는 중…', 'ok');
+      const data = await cutToWav(c.start, Math.min(30, c.len));
+      const id = await rpc('host_put_media', { p_pin: pin, p_data: data, p_thumb: null, p_name: `${songFileName} ${fmtT(c.start)}~ (${slot === 'audio' ? '도입부' : '싸비'})` });
+      q[slot] = { src: `#${id}`, len: Math.min(30, c.len) };
+      cutSlot = null; renderDetail(); renderQList(); commitNow(`✔ ${slot === 'audio' ? '도입부' : '싸비'} ${c.len}초를 저장했어요.`);
+      loadGallery();
+    } catch (err) { b.disabled = false; msg($('#edit-msg'), err.message, 'err'); }
+  }
+});
+$('#qdetail').addEventListener('change', async e => {
+  const el = e.target; if (sel == null) return;
+  const q = questions[sel];
+  if (el.matches('input[data-song="mode"]')) {
+    const slot = el.dataset.slot; q[slot] = { src: '', mode: el.value };
+    cutSlot = null; renderDetail(); scheduleCommit();
+  } else if (el.matches('input[data-song="file"]')) {
+    const f = el.files?.[0]; el.value = ''; if (!f) return;
+    try {
+      msg($('#edit-msg'), '노래 파일을 여는 중…', 'ok');
+      previewCtx = previewCtx || new (window.AudioContext || window.webkitAudioContext)();
+      songBuf = await previewCtx.decodeAudioData(await f.arrayBuffer());
+      songFileName = f.name.replace(/\.[a-z0-9]+$/i, '');
+      delete cutState.audio; delete cutState.chorus;
+      cutSlot = el.dataset.slot; renderDetail();
+      msg($('#edit-msg'), '들려줄 부분의 시작 위치와 길이를 정하고 "이 구간으로 저장"을 눌러 주세요.', 'ok');
+    } catch { msg($('#edit-msg'), '이 파일은 열 수 없어요. MP3·M4A·WAV 파일로 해 주세요.', 'err'); }
+  }
+});
+$('#qdetail').addEventListener('input', e => {
+  const el = e.target; if (!el.dataset.cut) return;
+  const slot = el.dataset.slot, c = cutState[slot]; if (!c) return;
+  const v = Number(el.value); if (Number.isNaN(v)) return;
+  if (el.dataset.cut === 'start') c.start = Math.max(0, Math.min(songBuf.duration - 1, v));
+  else c.len = Math.max(2, Math.min(30, v));
+  const box = el.closest('.cutter');
+  box.querySelectorAll(`[data-cut="${el.dataset.cut}"]`).forEach(x => { if (x !== el) x.value = el.dataset.cut === 'start' ? c.start : c.len; });
 });

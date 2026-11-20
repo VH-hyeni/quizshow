@@ -1,6 +1,6 @@
-import { rpc, $, esc, jitter, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE } from './common.js?v=20261119g';
-import { GAMES, KIND_LABEL, kindOf, fmtPlay } from './questions-format.js?v=20261119g';
-import { avatarSVG, normAvatar, randomAvatar, PEOPLE, ACC_SLOTS, BAMTI, HAIR_COLORS } from './characters.js?v=20261119g';
+import { rpc, $, esc, jitter, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE } from './common.js?v=20261120a';
+import { GAMES, KIND_LABEL, kindOf, fmtPlay } from './questions-format.js?v=20261120a';
+import { avatarSVG, normAvatar, randomAvatar, PEOPLE, ACC_SLOTS, BAMTI, HAIR_COLORS } from './characters.js?v=20261120a';
 
 if (!configured) { showConfigError(); throw new Error('config.js not set'); }
 
@@ -226,12 +226,63 @@ function renderSlidePhone(g) {
     </div>`;
 }
 
+const songNote = q => (q.audio?.src ? `<div class="song-note"><span class="mini-cd" aria-hidden="true"></span>앞쪽 스크린에서 나오는 노래를 잘 들어 보세요</div>` : '')
+  + (q.image ? '<div class="song-note img-note">🖼 스크린의 그림을 보고 답해 주세요</div>' : '');
+const typedKey = g => `qs.typed.${g.q_index}.${g.started_at}`;
+
+// 주관식: 직접 적어서 제출 (한 번만)
+function renderTyped(g) {
+  const q = g.question;
+  const mine = store.get(typedKey(g));
+  const closed = g.phase === 'closed';
+  view.innerHTML = `
+    ${metaRow(g, true)}
+    ${songNote(q)}
+    <div class="qtext">${esc(q.text)}</div>
+    <form class="typed-form" autocomplete="off">
+      <input name="ans" maxlength="60" placeholder="정답을 적어 주세요" enterkeyhint="send" ${mine != null || closed ? 'disabled' : ''} value="${esc(mine ?? '')}">
+      <button class="btn" type="submit" ${mine != null || closed ? 'disabled' : ''}>제출</button>
+    </form>
+    <p class="muted typed-tip">띄어쓰기·대소문자는 상관없어요 · 한 번만 낼 수 있어요</p>
+    <div class="status"></div>`;
+  const form = view.querySelector('.typed-form'), input = form.ans, btn = form.querySelector('button'), status = view.querySelector('.status');
+  const lock = () => { input.disabled = true; btn.disabled = true; };
+  if (closed) { lock(); status.textContent = mine != null ? '마감되었습니다. 결과를 기다려 주세요.' : '응답이 마감되었어요.'; return; }
+  if (mine != null) status.textContent = '제출 완료! 결과를 기다려 주세요.';
+  else setTimeout(() => input.focus(), 50);
+  const timerEl = view.querySelector('.timer');
+  const updateTimer = () => {
+    const r = remainingSec(g);
+    if (r == null) { timerEl.textContent = ''; return; }
+    timerEl.textContent = `${r}초`;
+    timerEl.classList.toggle('urgent', r <= 5);
+    if (r <= 0 && store.get(typedKey(g)) == null) { lock(); status.textContent = '시간이 끝났어요.'; clearInterval(tick); }
+  };
+  updateTimer();
+  tick = setInterval(updateTimer, 250);
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const t = input.value.trim();
+    if (!t) { input.focus(); return; }
+    lock(); status.textContent = '제출 중…';
+    try {
+      let res = await rpc('submit_text', { p_id: myId, p_text: t });
+      if (res === 'unknown_player') { await rejoin(); res = await rpc('submit_text', { p_id: myId, p_text: t }); }
+      if (res === 'ok' || res === 'already') { store.set(typedKey(g), t); status.textContent = res === 'ok' ? '제출 완료! 결과를 기다려 주세요.' : '이미 제출했어요.'; }
+      else if (res === 'empty') { input.disabled = false; btn.disabled = false; status.textContent = '글자나 숫자를 적어 주세요.'; }
+      else status.textContent = res === 'timeout' ? '시간이 끝났어요.' : '지금은 제출할 수 없어요.';
+    } catch { input.disabled = false; btn.disabled = false; status.textContent = '전송 실패. 다시 눌러 주세요.'; }
+  });
+}
+
 function renderQuestion(g) {
   const q = g.question;
+  if (q.typed) return renderTyped(g);
   const pick = getPick(g);
   const closed = g.phase === 'closed';
   view.innerHTML = `
     ${metaRow(g, true)}
+    ${songNote(q)}
     <div class="qtext">${esc(q.text)}</div>
     <div class="options ${q.ox ? 'ox-grid' : ''}">${optionButtons(g, pick)}</div>
     <div class="status"></div>`;
@@ -302,8 +353,10 @@ async function renderReveal(g, seq) {
   let st = null;
   try { st = await fetchStatus(); } catch {}
   if (seq !== renderSeq || kicked) return;
-  const pick = st?.choice ?? local;
-  const myLine = pick != null
+  const pick = st?.choice ?? (q.typed ? (store.get(typedKey(g)) != null ? -1 : null) : local);
+  const typedMine = q.typed ? store.get(typedKey(g)) : null;
+  const myLine = q.typed ? (typedMine != null ? `<div class="answer-line muted">내 답 <b>${esc(typedMine)}</b></div>` : '')
+    : pick != null
     ? `<div class="answer-line muted">내 선택 <b>${LABELS[pick]}. ${esc(q.options[pick])}</b></div>`
     : '';
 
@@ -323,8 +376,9 @@ async function renderReveal(g, seq) {
     <div class="center">
       ${meBig({ none: 'sleep', good: 'happy', bad: 'sad' }[state], 'hop')}
       <div class="verdict ${state}">${{ none: '시간 초과', good: '정답!', bad: '오답' }[state]}</div>
-      <div class="answer-line muted">정답 <b>${LABELS[g.correct]}. ${esc(q.options[g.correct])}</b></div>
-      ${state === 'bad' ? myLine : ''}
+      <div class="answer-line muted">정답 <b>${q.typed ? esc(q.answer_text || '') : `${LABELS[g.correct]}. ${esc(q.options[g.correct])}`}</b></div>
+      ${state === 'bad' || (q.typed && state === 'good') ? myLine : ''}
+      ${q.chorus?.src ? '<div class="song-note"><span class="mini-cd playing" aria-hidden="true"></span>스크린에서 싸비가 나와요 🎶</div>' : ''}
       ${st ? `<div class="stats">
         <div class="stat"><b>${st.score.toLocaleString()}</b><span>누적 점수</span></div>
         <div class="stat"><b>${st.rank}위</b><span>${st.players}명 중</span></div>

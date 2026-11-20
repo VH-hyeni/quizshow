@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>진행자</title>
-  <link rel="stylesheet" href="style.css?v=20261119g">
+  <link rel="stylesheet" href="style.css?v=20261120a">
 </head>
 <body class="host">
   <!-- 로그인 -->
@@ -64,6 +64,11 @@
             </div>
             <span class="rv-note" id="rv-note"></span>
           </div>
+          <div class="qgroup hidden" id="song-group">
+            <span class="qlabel">노래</span>
+            <button class="btn ghost sm" id="song-replay" type="button">🎵 스크린에서 다시 듣기</button>
+            <span class="muted song-what" id="song-what"></span>
+          </div>
           <div class="qgroup">
             <span class="qlabel">입장 QR</span>
             <button class="btn ghost sm" id="qr-toggle" type="button" aria-pressed="false">📱 스크린에 QR 띄우기</button>
@@ -91,21 +96,23 @@
         </nav>
 
         <div class="pane" data-pane="q">
-          <h2>문항 목록 <span class="muted" id="qcount"></span></h2>
-          <ul class="qlist" id="qlist"><li class="muted">문항을 아래에서 올려 주세요</li></ul>
-
-          <h2>문항 편집</h2>
           <div class="set-bar">
             <label class="set-pick">문제셋
               <select id="set-pick" aria-label="문제셋 고르기"><option value="">새 문제셋</option></select>
             </label>
             <input id="set-name" maxlength="40" placeholder="문제셋 이름 (예: 송년회 1부)" aria-label="문제셋 이름">
-            <button class="btn ghost sm" id="set-save" type="button">💾 문제셋 저장</button>
+            <button class="btn ghost sm" id="set-save" type="button">💾 저장</button>
             <button class="btn ghost sm" id="set-new" type="button">새로 만들기</button>
             <button class="btn ghost sm set-del" id="set-del" type="button">삭제</button>
           </div>
+
+          <div class="qlist-head">
+            <h2>문항 목록 <span class="muted" id="qcount"></span></h2>
+            <span class="save-state" id="save-state"></span>
+          </div>
+          <ul class="qlist" id="qlist"><li class="muted">아래 버튼으로 문항을 추가해 주세요</li></ul>
           <div class="tpl-row">
-            <span class="muted">틀 추가</span>
+            <span class="muted">＋ 추가</span>
             <button class="btn ghost sm" type="button" data-tpl="quiz">정답 퀴즈</button>
             <button class="btn ghost sm" type="button" data-tpl="ox">OX 퀴즈</button>
             <button class="btn ghost sm" type="button" data-tpl="poll">투표</button>
@@ -113,30 +120,37 @@
             <button class="btn ghost sm" type="button" data-tpl="order">숫자 순서</button>
             <button class="btn ghost sm" type="button" data-tpl="reaction">반응속도</button>
             <button class="btn ghost sm" type="button" data-tpl="tap">광클</button>
-            <label class="btn ghost sm img-btn">🖼 이미지 넣기<input type="file" id="img-pick" accept="image/*" hidden></label>
-            <label class="btn ghost sm img-btn">📊 PPT 장표 넣기<input type="file" id="deck-pick" accept="application/pdf,.pdf,image/*" multiple hidden></label>
+            <button class="btn ghost sm" type="button" data-tpl="typed">주관식</button>
+            <button class="btn ghost sm" type="button" data-tpl="song">🎵 노래 퀴즈</button>
+            <button class="btn ghost sm" type="button" data-tpl="songw">🎵 노래 주관식</button>
+            <label class="btn ghost sm img-btn">📊 PPT 장표<input type="file" id="deck-pick" accept="application/pdf,.pdf,image/*" multiple hidden></label>
           </div>
-          <details class="help">
-            <summary>입력 형식 보기</summary>
-            빈 줄로 문항을 구분해요.<br>
-            <code>Q:</code> 정답 퀴즈 — <code>-</code> 보기, <code>*</code> 정답 보기<br>
-            <code>OX:</code> OX 퀴즈 — 다음 줄에 <code>정답: O</code> 또는 <code>정답: X</code><br>
-            <code>P:</code> 투표(선호도 조사) — 정답 없음<br>
-            <code>S:</code> 발표(칠판) — 다음 줄부터 설명을 한 줄씩, <code>-</code> 로 시작하면 글머리표 · <code>이미지: #1</code> 은 '🖼 이미지 넣기'로 올린 그림<br>
-            <code>G: 숫자순서</code> / <code>G: 반응속도</code> / <code>G: 광클</code> — 미니게임<br>
-            <code>T: 20</code> 제한시간(초) · 광클은 누르는 시간 · <code>크기: 4</code> 숫자순서 판 크기(4 = 1~16)<br>
-            <code>정답공개: 자동</code> / <code>정답공개: 수동</code> 이 문항만 정답 공개 방식 따로 (안 쓰면 기본값)<br>
-            <code>공개: 실시간</code> 고르는 즉시 아바타 이동 · <code>공개: 정답때</code> 정답 공개 때 · <code>공개: 비공개</code> 끝까지 비밀(인원수만)
-          </details>
-          <textarea id="editor" spellcheck="false"></textarea>
-          <div class="row" style="margin-top:10px">
-            <button class="btn secondary" id="upload" type="button">▶ 이 문항으로 진행하기</button>
-            <button class="btn ghost" id="load-server" type="button">진행 중인 문항 가져오기</button>
-            <button class="btn ghost" id="sample" type="button">예시 넣기</button>
-          </div>
-          <p class="muted set-help"><b>💾 문제셋 저장</b>은 편집기 내용을 이름 붙여 보관만 해요 (스크린엔 영향 없음).
-            <b>▶ 이 문항으로 진행하기</b>를 눌러야 위 문항 목록과 스크린에 반영돼요.</p>
+
+          <section class="qdetail" id="qdetail" aria-live="polite">
+            <p class="muted qd-empty">문항을 누르면 여기에서 자세히 고칠 수 있어요.</p>
+          </section>
           <div class="msg" id="edit-msg"></div>
+
+          <details class="help text-edit">
+            <summary>텍스트로 한꺼번에 편집 (고급)</summary>
+            <p class="muted">모든 문항을 글로 한 번에 고칠 때 써요. 고친 뒤 <b>텍스트 적용</b>을 눌러야 반영돼요.</p>
+            <details class="help">
+              <summary>입력 형식 보기</summary>
+              빈 줄로 문항을 구분해요.<br>
+              <code>Q:</code> 정답 퀴즈 — <code>-</code> 보기, <code>*</code> 정답 보기<br>
+              <code>OX:</code> OX 퀴즈 — 다음 줄에 <code>정답: O</code> 또는 <code>정답: X</code><br>
+              <code>P:</code> 투표(선호도 조사) — 정답 없음<br>
+              <code>S:</code> 발표(칠판) — 다음 줄부터 설명을 한 줄씩 · <code>이미지: #1</code> 그림 · <code>장표: #1</code> 화면 가득 장표<br>
+              <code>G: 숫자순서</code> / <code>G: 반응속도</code> / <code>G: 광클</code> — 미니게임<br>
+              <code>T: 20</code> 제한시간(초) · <code>크기: 4</code> 숫자순서 판 크기<br>
+              <code>정답공개: 자동</code> / <code>수동</code> · <code>공개: 실시간</code> / <code>정답때</code> / <code>비공개</code>
+            </details>
+            <textarea id="editor" spellcheck="false"></textarea>
+            <div class="row" style="margin-top:10px">
+              <button class="btn secondary" id="upload" type="button">텍스트 적용</button>
+              <button class="btn ghost" id="sample" type="button">예시 넣기</button>
+            </div>
+          </details>
         </div>
 
         <div class="pane hidden" data-pane="p">
@@ -212,11 +226,17 @@
           </div>
         </div>
       </section>
+      <div class="picker hidden" id="picker" role="dialog" aria-label="갤러리에서 그림 고르기">
+        <div class="picker-card">
+          <div class="picker-head"><b>그림 고르기</b><button class="btn ghost sm" type="button" data-pkclose>닫기</button></div>
+          <div class="picker-grid" id="picker-grid"></div>
+        </div>
+      </div>
       <div class="lightbox hidden" id="lightbox" role="dialog" aria-label="이미지 크게 보기">
         <figure><img id="lb-img" alt=""><figcaption id="lb-cap"></figcaption></figure>
       </div>
     </div>
   </div>
-  <script type="module" src="host.js?v=20261119g"></script>
+  <script type="module" src="host.js?v=20261120a"></script>
 </body>
 </html>
