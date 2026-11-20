@@ -2,8 +2,8 @@
 //  노래 맞히기: 스크린에서 노래 구간 틀기 (올린 MP3 '#번호' 또는 유튜브)
 //  - 소리는 스크린 컴퓨터에서만 나와요 (폰 100대가 따로 틀면 박자가 어긋나서)
 // =====================================================================
-import { rpc } from './common.js?v=20261120a';
-import { ytId } from './questions-format.js?v=20261120a';
+import { rpc } from './common.js?v=20261120f';
+import { ytId } from './questions-format.js?v=20261120f';
 
 const cache = new Map();            // '#12' → data URL
 let audio = null, yt = null, stopTimer = null, listeners = new Set(), playingKey = null;

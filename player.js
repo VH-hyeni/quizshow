@@ -1,6 +1,6 @@
-import { rpc, $, esc, jitter, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE } from './common.js?v=20261120a';
-import { GAMES, KIND_LABEL, kindOf, fmtPlay } from './questions-format.js?v=20261120a';
-import { avatarSVG, normAvatar, randomAvatar, PEOPLE, ACC_SLOTS, BAMTI, HAIR_COLORS } from './characters.js?v=20261120a';
+import { rpc, $, esc, jitter, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE, applyFonts } from './common.js?v=20261120f';
+import { GAMES, KIND_LABEL, kindOf, fmtPlay } from './questions-format.js?v=20261120f';
+import { avatarSVG, normAvatar, randomAvatar, PEOPLE, ACC_SLOTS, BAMTI, HAIR_COLORS } from './characters.js?v=20261120f';
 
 if (!configured) { showConfigError(); throw new Error('config.js not set'); }
 
@@ -163,7 +163,7 @@ async function myStatus() {
 var lastKey = null;
 function render(g) {
   const prev = game;
-  game = g;
+  game = g; applyFonts(g);
   if (kicked) return;
   // 누군가 내보내졌으면 내가 그 사람인지 한 번 확인 (100명이 몰리지 않게 조금씩 흩어서)
   if (nick && kickSeen != null && g.kick_epoch !== kickSeen) setTimeout(checkKicked, Math.random() * 1500);

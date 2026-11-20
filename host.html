@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>진행자</title>
-  <link rel="stylesheet" href="style.css?v=20261120a">
+  <link rel="stylesheet" href="style.css?v=20261120f">
 </head>
 <body class="host">
   <!-- 로그인 -->
@@ -209,6 +209,7 @@
           <label class="map-pick">배경색
             <select id="map-pick">
               <option value="auto">기본 (검정)</option>
+              <option value="space">픽셀 우주 (게임 화면)</option>
               <option value="night">밤하늘</option>
               <option value="purple">보랏빛 무대</option>
               <option value="wine">와인</option>
@@ -216,6 +217,38 @@
               <option value="ocean">깊은 바다</option>
             </select>
           </label>
+          <h2>글꼴</h2>
+          <div class="help">큰 화면과 참가자 폰에 똑같이 적용돼요. 나머지 글자는 그대로예요.</div>
+          <div class="row">
+            <label class="map-pick">문제 제목
+              <select id="font-q">
+                <option value="pixel">둥근모 (픽셀, 기본)</option>
+                <option value="noto">본고딕 (깔끔)</option>
+                <option value="blackhan">검은고딕 (굵고 강하게)</option>
+                <option value="dohyeon">도현 (또박또박)</option>
+                <option value="jua">주아 (동글동글)</option>
+                <option value="gowun">고운돋움 (부드럽게)</option>
+                <option value="nanum">나눔고딕</option>
+                <option value="myeongjo">나눔명조 (붓글씨 느낌)</option>
+                <option value="gaegu">개구 (손글씨)</option>
+                <option value="sunflower">해바라기 (얇고 단정)</option>
+              </select>
+            </label>
+            <label class="map-pick">답 선택지
+              <select id="font-opt">
+                <option value="pixel">둥근모 (픽셀, 기본)</option>
+                <option value="noto">본고딕 (깔끔)</option>
+                <option value="blackhan">검은고딕 (굵고 강하게)</option>
+                <option value="dohyeon">도현 (또박또박)</option>
+                <option value="jua">주아 (동글동글)</option>
+                <option value="gowun">고운돋움 (부드럽게)</option>
+                <option value="nanum">나눔고딕</option>
+                <option value="myeongjo">나눔명조 (붓글씨 느낌)</option>
+                <option value="gaegu">개구 (손글씨)</option>
+                <option value="sunflower">해바라기 (얇고 단정)</option>
+              </select>
+            </label>
+          </div>
         </div>
 
         <div class="pane hidden" data-pane="r">
@@ -237,6 +270,6 @@
       </div>
     </div>
   </div>
-  <script type="module" src="host.js?v=20261120a"></script>
+  <script type="module" src="host.js?v=20261120f"></script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-import { SUPABASE_URL, SUPABASE_KEY, TITLE } from './config.js?v=20261120a';
+import { SUPABASE_URL, SUPABASE_KEY, TITLE } from './config.js?v=20261120f';
 
 export { TITLE };
 // 주소 끝의 '/', '/rest/v1' 같은 꼬리나 'NEXT_PUBLIC_..=' 같은 앞부분이 같이 복사돼도 바로잡음
@@ -134,4 +134,37 @@ export function showConfigError() {
 
 export function joinUrl() {
   return new URL('index.html', location.href).href.replace(/index\.html$/, '');
+}
+
+// 진행자가 고른 글꼴(문제 제목 / 답 선택지)을 화면에 적용. 필요한 글꼴만 그때그때 불러옴.
+const FONTS = {
+  pixel: null,
+  noto: ['Noto Sans KR:wght@500;800', "'Noto Sans KR'"],
+  blackhan: ['Black Han Sans', "'Black Han Sans'"],
+  dohyeon: ['Do Hyeon', "'Do Hyeon'"],
+  jua: ['Jua', "'Jua'"],
+  gowun: ['Gowun Dodum', "'Gowun Dodum'"],
+  nanum: ['Nanum Gothic:wght@700;800', "'Nanum Gothic'"],
+  myeongjo: ['Nanum Myeongjo:wght@700;800', "'Nanum Myeongjo'"],
+  gaegu: ['Gaegu:wght@700', "'Gaegu'"],
+  sunflower: ['Sunflower:wght@500;700', "'Sunflower'"],
+};
+const loadedFonts = new Set();
+function fontStack(key) {
+  const f = FONTS[key];
+  if (!f) return '';
+  if (!loadedFonts.has(key)) {
+    loadedFonts.add(key);
+    const l = document.createElement('link');
+    l.rel = 'stylesheet';
+    l.href = `https://fonts.googleapis.com/css2?family=${f[0].replace(/ /g, '+')}&display=swap`;
+    document.head.appendChild(l);
+  }
+  return `${f[1]}, var(--font-pixel), sans-serif`;
+}
+export function applyFonts(g) {
+  const s = document.documentElement.style;
+  const q = fontStack(g?.font_q), o = fontStack(g?.font_opt);
+  if (q) s.setProperty('--font-q', q); else s.removeProperty('--font-q');
+  if (o) s.setProperty('--font-opt', o); else s.removeProperty('--font-opt');
 }

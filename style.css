@@ -1,4 +1,4 @@
-@import url('tokens.css?v=20261120a');
+@import url('tokens.css?v=20261120f');
 
 /* =====================================================================
    컴포넌트 — 색/크기는 tokens.css 변수만 사용
@@ -1372,3 +1372,210 @@ body.player {
 .screen .q-img img:not([src]) { width: 70%; aspect-ratio: 4 / 3; background: rgba(255, 255, 255, .06); }
 .screen .q-split .sopts:not(.ox):not(.typed) { grid-template-columns: 1fr; }
 .player .img-note { color: var(--text-sub); }
+
+/* =====================================================================
+   스크린 정돈: 게임 느낌(픽셀 폰트·도트 모서리·캐릭터)은 살리고 덜 시끄럽게
+   - 상자: 굵은 검정 테두리 + 큰 그림자 → 얇은 테두리 + 위쪽 빛 한 줄 + 부드러운 그림자
+   - 보기 칸: 이중 상자 → 한 장짜리 카드 (색은 왼쪽 글자 칸과 위쪽 띠에만)
+   - 이름표: 캐릭터 너비를 넘지 않게, 작을 땐 숨김
+   ===================================================================== */
+.screen {
+  --pxw: .3vh;
+  --px-shadow: 0 1.2vh 3vh rgba(0, 0, 0, .38);
+  --edge: rgba(255, 255, 255, .07);
+}
+.screen .top, .screen .qhead, .screen .chatpanel, .screen .lobby-info,
+.screen .board, .screen .game-stage, .screen .spectators, .screen .zoom-panel,
+.screen .banner:not(:empty), .screen .stage > .empty {
+  background: linear-gradient(180deg, rgba(255, 255, 255, .035), transparent 40%), var(--card);
+  box-shadow: 0 0 0 var(--pxw) #000, inset 0 .25vh 0 var(--edge), var(--px-shadow);
+}
+.screen .ticket { box-shadow: 0 0 0 var(--pxw) #000, var(--px-shadow); }
+
+/* 위쪽 막대: 가볍게 */
+.screen .top { background: rgba(14, 14, 20, .82); backdrop-filter: blur(6px); }
+.screen .sound-btn { background: transparent; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18); color: var(--text-sub); }
+.screen .sound-btn.attn { background: transparent; animation: none; color: var(--accent); box-shadow: inset 0 0 0 1px rgba(255, 201, 60, .5); }
+
+/* 문제 머리: 응답 수를 같은 줄 아래에 조용히 */
+.screen .qhead { padding: 2.2vh 3vh; }
+.screen .kind-pill { box-shadow: none; padding: .5vh 1.2vh; font-size: 2vh; vertical-align: .6vh; }
+.screen #ans:not(:empty) {
+  background: none; box-shadow: none; padding: 0 0 0 .4vh; margin: -.6vh 0 0; color: var(--text-sub); font-size: 2.2vh;
+}
+.screen #ans:not(:empty) b { color: var(--text); }
+
+/* 보기 카드 */
+.screen .sopts { gap: 2vh; padding: 0; }
+.screen .sopt {
+  --room: color-mix(in srgb, var(--c) 7%, var(--card)); --floor: color-mix(in srgb, var(--c) 13%, var(--card));
+  background: linear-gradient(var(--room) 0 74%, var(--floor) 74% 100%);
+  box-shadow: 0 0 0 var(--pxw) #000, inset 0 .5vh 0 var(--c), var(--px-shadow);
+  padding: 1.6vh 1.8vh 1.4vh;
+}
+.screen .sopt .head {
+  background: none; box-shadow: none; margin: 0; padding: .4vh .2vh 1.2vh;
+  border-bottom: 1px solid rgba(255, 255, 255, .07);
+}
+.screen .sopt .badge { box-shadow: none; }
+.screen .sopt .cnt { color: var(--text); }
+.screen .zoom-btn { background: transparent; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .14); }
+.screen .sopt.correct { box-shadow: 0 0 0 var(--pxw) #000, 0 0 0 1vh var(--accent), 0 0 0 1.3vh #000, inset 0 .5vh 0 var(--c), 0 0 6vh rgba(255, 201, 60, .25); }
+.screen .sopt.dim { opacity: .45; filter: grayscale(.6); }
+
+/* 이름표 */
+.screen .pc-name {
+  max-width: calc(var(--s, 48px) * .74); font-size: max(10px, calc(var(--s, 48px) * .2)); font-weight: 700;
+  text-shadow: 0 1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 -1px 0 #000;
+}
+.screen .pc.vip .pc-name { max-width: calc(var(--s, 48px) * 1.6); }
+.screen .tiny-names .pc:not(.vip):not(.spoke):not(.talking) .pc-name { visibility: hidden; }
+
+/* 구경 줄 */
+.screen .spectators { background: rgba(14, 14, 20, .6); }
+
+/* 순위: 화면 안에 다 들어오게 */
+.screen .board { min-height: 0; overflow: hidden; gap: .8vh; padding: 2.6vh 3vh; }
+.screen .board .board-head { margin-bottom: .8vh; }
+.screen .board h1 { font-size: 4.4vh; }
+.screen .board .r { flex: 1 1 0; min-height: 0; max-height: 7.4vh; padding: 0 2.6vh; font-size: 2.6vh; background: rgba(255, 255, 255, .04); }
+.screen .board .r.top1, .screen .board .r.top1 + .r.top1 { flex-grow: 1.25; max-height: 8.6vh; font-size: 3vh; padding: 0 2.6vh; box-shadow: 0 0 0 var(--pxw) #000; }
+.screen .board .r.top2, .screen .board .r.top3 { background: rgba(255, 201, 60, .08); }
+
+/* 대기 화면 */
+.screen .lobby .count b { color: var(--accent); }
+.screen .lobby { align-items: stretch; }
+.screen .lobby .ticket { align-self: center; }
+.player .opt { box-shadow: inset 0 -3px 0 rgba(0, 0, 0, .35); }
+.player .opt:active:not(:disabled) { transform: translateY(2px); box-shadow: none; }
+
+/* =====================================================================
+   스크린 배경 '픽셀 우주': 레트로 게임 화면처럼
+   - 배경: 남색 체크 우주 그림 (assets/bg/space.webp)
+   - 문제: 밝은 대화 상자 + 'QUESTION 1/10' 탭
+   - 보기: 하늘색 버튼 카드 + 아래로 떨어지는 도트 그림자
+   ===================================================================== */
+.qtab { display: none; }
+body.screen[data-map="space"] {
+  --sp-ink: #14134A; --sp-line: #0B0A2E; --sp-paper: #EEF0FF; --sp-sky: #BFD3FF; --sp-lav: #9C8BFF;
+  background: #12123F url(assets/bg/space.webp?v=20261120f) center / cover no-repeat fixed;
+}
+body.screen[data-map="space"] .top { background: rgba(11, 10, 46, .72); box-shadow: 0 0 0 .3vh var(--sp-line), .7vh .7vh 0 rgba(11, 10, 46, .6); }
+
+/* 문제 = 대화 상자 */
+body.screen[data-map="space"] .qhead {
+  position: relative; background: var(--sp-paper); color: var(--sp-ink); margin-top: 2.6vh;
+  box-shadow: 0 0 0 .4vh var(--sp-line), .9vh .9vh 0 0 var(--sp-lav), .9vh .9vh 0 .4vh var(--sp-line);
+}
+body.screen[data-map="space"] .qhead .qtext { color: var(--sp-ink); }
+body.screen[data-map="space"] .qtab {
+  display: block; position: absolute; left: 2.4vh; top: -4.4vh; padding: .7vh 2vh; font-size: 2vh; font-weight: 800; letter-spacing: .06em;
+  background: var(--sp-sky); color: var(--sp-ink); box-shadow: 0 0 0 .4vh var(--sp-line);
+  clip-path: polygon(0 0, calc(100% - 1.6vh) 0, 100% 100%, 0 100%); padding-right: 3.4vh;
+}
+body.screen[data-map="space"] .kind-pill { box-shadow: 0 0 0 .3vh var(--sp-line); }
+body.screen[data-map="space"] .clock { box-shadow: 0 0 0 .4vh var(--sp-line); }
+body.screen[data-map="space"] .clock::before { background: var(--sp-ink); }
+body.screen[data-map="space"] .clock span { color: #fff; }
+body.screen[data-map="space"] #ans:not(:empty) { color: #C9CFFF; }
+body.screen[data-map="space"] #ans:not(:empty) b { color: #fff; }
+
+/* 보기 = 버튼 카드 */
+body.screen[data-map="space"] .sopt {
+  --room: color-mix(in srgb, var(--c) 8%, #DCE6FF); --floor: color-mix(in srgb, var(--c) 18%, #C6D5FF);
+  background: linear-gradient(var(--room) 0 74%, var(--floor) 74% 100%);
+  box-shadow: 0 0 0 .4vh var(--sp-line), .9vh .9vh 0 0 rgba(11, 10, 46, .75);
+}
+body.screen[data-map="space"] .sopt .head { color: var(--sp-ink); border-bottom-color: rgba(20, 19, 74, .15); }
+body.screen[data-map="space"] .sopt .badge { box-shadow: 0 0 0 .3vh var(--sp-line); }
+body.screen[data-map="space"] .sopt .cnt { color: var(--sp-ink); }
+body.screen[data-map="space"] .zoom-btn { color: var(--sp-ink); box-shadow: inset 0 0 0 1px rgba(20, 19, 74, .3); }
+body.screen[data-map="space"] .sopt.correct { box-shadow: 0 0 0 .4vh var(--sp-line), 0 0 0 1.1vh #FFE066, 0 0 0 1.5vh var(--sp-line), 0 0 6vh rgba(255, 224, 102, .45); }
+body.screen[data-map="space"] .sopt.dim { opacity: 1; filter: brightness(.55) saturate(.35); }
+body.screen[data-map="space"] .sopt .pc-name { color: #fff; }
+body.screen[data-map="space"] .sopts.show-crowd .crowd:empty::after { color: var(--sp-ink); background: rgba(255, 255, 255, .7); }
+
+/* 나머지 상자: 반투명 남색 */
+body.screen[data-map="space"] .chatpanel, body.screen[data-map="space"] .spectators,
+body.screen[data-map="space"] .lobby-info, body.screen[data-map="space"] .board, body.screen[data-map="space"] .game-stage,
+body.screen[data-map="space"] .zoom-panel, body.screen[data-map="space"] .banner:not(:empty) {
+  background: rgba(16, 15, 60, .82); box-shadow: 0 0 0 .4vh var(--sp-line), .9vh .9vh 0 0 rgba(11, 10, 46, .6);
+}
+body.screen[data-map="space"] .board .r { background: rgba(191, 211, 255, .08); }
+body.screen[data-map="space"] .board .r.top1 { background: #FFE066; color: var(--sp-ink); box-shadow: 0 0 0 .3vh var(--sp-line); }
+body.screen[data-map="space"] .lobby .count b { color: #FFE066; }
+body.screen[data-map="space"] .ticket { box-shadow: 0 0 0 .4vh var(--sp-line), .9vh .9vh 0 0 var(--sp-lav); }
+
+/* =====================================================================
+   선택지 = 게임 메뉴 버튼 (색깔 구분 없이 하나의 톤)
+   - 도트 테두리 + 위쪽 밝은 줄 · 아래쪽 어두운 줄(입체 버튼) + 딱 떨어지는 그림자
+   - 글자 칸은 크림색 네모, 정답은 금색 + ▶ 커서
+   ===================================================================== */
+.screen .sopt, .screen .sopt.opt-0, .screen .sopt.opt-1, .screen .sopt.opt-2, .screen .sopt.opt-3, .screen .sopt.opt-4, .screen .sopt.opt-5 {
+  --c: #F4EFDF; --on-c: #15121F;
+}
+.screen .sopt {
+  --room: #1C1B2B; --floor: #16151F;
+  background: linear-gradient(var(--room) 0 74%, var(--floor) 74% 100%);
+  box-shadow: 0 0 0 .45vh #000, inset 0 .55vh 0 rgba(255, 255, 255, .09), inset 0 -.7vh 0 rgba(0, 0, 0, .4), 1vh 1vh 0 0 #000;
+  transition: transform .12s steps(2), filter .2s;
+}
+.screen .sopt .head { border-bottom: 0; padding-bottom: .6vh; }
+.screen .sopt .badge {
+  width: 6.2vh; height: 6.2vh; font-size: 3.4vh; background: var(--c); color: var(--on-c);
+  box-shadow: 0 0 0 .4vh #000, inset -.5vh -.5vh 0 rgba(0, 0, 0, .18), inset .4vh .4vh 0 rgba(255, 255, 255, .7);
+}
+.screen .sopt .txt { color: #fff; }
+.screen .sopt .cnt { color: #F4EFDF; }
+.screen .sopt .head::before {
+  content: '▶'; font-size: 2.6vh; color: #FFD84A; width: 0; overflow: hidden; opacity: 0; transition: width .15s, opacity .15s;
+}
+.screen .sopt.correct { --c: #FFD84A; --room: #2A2410; --floor: #221D0C;
+  box-shadow: 0 0 0 .45vh #000, 0 0 0 1.1vh #FFD84A, 0 0 0 1.55vh #000, inset 0 .55vh 0 rgba(255, 255, 255, .12), 1.4vh 1.4vh 0 0 #000;
+  transform: translate(-.3vh, -.3vh); }
+.screen .sopt.correct .head::before { width: 3vh; opacity: 1; animation: cursor-blink .8s steps(2) infinite; }
+@keyframes cursor-blink { 50% { opacity: 0; } }
+.screen .sopt.dim { opacity: 1; filter: brightness(.5) saturate(.3); transform: none; }
+.screen .sopts.show-bars .fill { background: #F4EFDF; }
+.screen .sopts.show-bars .pct { color: #F4EFDF; }
+
+/* 픽셀 우주 배경: 같은 버튼을 밝은 하늘색 톤으로 */
+body.screen[data-map="space"] .sopt { --room: #D7E2FF; --floor: #C3D3FF;
+  box-shadow: 0 0 0 .45vh var(--sp-line), inset 0 .55vh 0 rgba(255, 255, 255, .6), inset 0 -.7vh 0 rgba(20, 19, 74, .18), 1vh 1vh 0 0 var(--sp-line); }
+body.screen[data-map="space"] .sopt .txt, body.screen[data-map="space"] .sopt .cnt { color: var(--sp-ink); }
+body.screen[data-map="space"] .sopt .badge { --c: #fff; box-shadow: 0 0 0 .4vh var(--sp-line), inset -.5vh -.5vh 0 rgba(20, 19, 74, .15); }
+body.screen[data-map="space"] .sopt.correct { --room: #FFF1B8; --floor: #FFE58A;
+  box-shadow: 0 0 0 .45vh var(--sp-line), 0 0 0 1.1vh #FFD84A, 0 0 0 1.55vh var(--sp-line), 1.4vh 1.4vh 0 0 var(--sp-line); }
+body.screen[data-map="space"] .sopt.correct .badge { --c: #FFD84A; }
+body.screen[data-map="space"] .sopt .head::before { color: #E0457B; }
+
+/* 폰 선택지도 같은 게임 버튼 */
+.player .opt:not(.ox) { --c: #F4EFDF; --on-c: #15121F; background: #1C1B2B; border: 0; border-radius: 6px;
+  box-shadow: 0 0 0 3px #000, inset 0 3px 0 rgba(255, 255, 255, .08), inset 0 -4px 0 rgba(0, 0, 0, .4), 4px 4px 0 #000; }
+.player .opt:not(.ox) .badge { border-radius: 3px; background: var(--c); color: var(--on-c);
+  box-shadow: 0 0 0 2px #000, inset -3px -3px 0 rgba(0, 0, 0, .15); }
+.player .opt:not(.ox):active:not(:disabled) { transform: translate(3px, 3px); box-shadow: 0 0 0 3px #000, 1px 1px 0 #000; }
+.player .opt.picked:not(.ox) { --c: #FFD84A; background: #2A2410; box-shadow: 0 0 0 3px #000, 0 0 0 6px #FFD84A, 0 0 0 9px #000; }
+
+/* =====================================================================
+   선택지 단일 색상: 배경·글자칸 모두 한 가지 색. 테두리와 그림자로만 버튼 느낌.
+   정답은 색을 바꾸지 않고 금색 테두리 + ▶ 커서로만 표시.
+   ===================================================================== */
+.screen .sopt, .screen .sopt.correct { --room: #23222F; --floor: #23222F; background: var(--room); }
+.screen .sopt .badge, .screen .sopt.correct .badge {
+  background: transparent; color: #fff;
+  box-shadow: inset 0 0 0 .4vh rgba(255, 255, 255, .85);
+}
+.screen .sopt.correct { box-shadow: 0 0 0 .45vh #000, 0 0 0 1.1vh #FFD84A, 0 0 0 1.55vh #000, 1.4vh 1.4vh 0 0 #000; }
+body.screen[data-map="space"] .sopt, body.screen[data-map="space"] .sopt.correct { --room: #E4EBFF; --floor: #E4EBFF; }
+body.screen[data-map="space"] .sopt .badge, body.screen[data-map="space"] .sopt.correct .badge {
+  background: transparent; color: var(--sp-ink); box-shadow: inset 0 0 0 .4vh var(--sp-line);
+}
+.player .opt:not(.ox), .player .opt.picked:not(.ox) { background: #23222F; }
+.player .opt:not(.ox) .badge, .player .opt.picked:not(.ox) .badge {
+  background: transparent; color: #fff; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .85);
+}
+
+/* 진행자가 고른 글꼴 */
+.screen .qtext, .player .qtext, .screen .chalk-title { font-family: var(--font-q, inherit); }
+.screen .sopt .txt, .player .opt .txt, .screen .sopt .badge, .player .opt .badge { font-family: var(--font-opt, inherit); }

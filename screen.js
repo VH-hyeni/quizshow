@@ -1,9 +1,9 @@
-import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE, joinUrl } from './common.js?v=20261120a';
-import { GAMES, KIND_LABEL, kindOf, fmtPlay, showOf, SHOW_LABEL, revealOf } from './questions-format.js?v=20261120a';
-import { nextAction, prevAction, revealAction, hostActions } from './flow.js?v=20261120a';
-import { sound, sfx, bgm } from './sound.js?v=20261120a';
-import { avatarSVG, mascotSVG } from './characters.js?v=20261120a';
-import { playSong, stopSong, preloadSong, onSong, songState, cdHTML } from './songplayer.js?v=20261120a';
+import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, serverNow, parseTs, LABELS, TITLE, joinUrl, applyFonts } from './common.js?v=20261120f';
+import { GAMES, KIND_LABEL, kindOf, fmtPlay, showOf, SHOW_LABEL, revealOf } from './questions-format.js?v=20261120f';
+import { nextAction, prevAction, revealAction, hostActions } from './flow.js?v=20261120f';
+import { sound, sfx, bgm } from './sound.js?v=20261120f';
+import { avatarSVG, mascotSVG } from './characters.js?v=20261120f';
+import { playSong, stopSong, preloadSong, onSong, songState, cdHTML } from './songplayer.js?v=20261120f';
 
 if (!configured) { showConfigError(); throw new Error('config.js not set'); }
 
@@ -69,7 +69,7 @@ function render(g) {
   if (!['question', 'closed', 'reveal'].includes(g.phase)) stage.classList.remove('crowd-mode');
   if (!(g.question?.typed && ['question', 'closed'].includes(g.phase))) stage.classList.remove('typed-q');
   songFlow(g, prev, entering);
-  setMap(g);
+  setMap(g); applyFonts(g);
   bubbleMode = g.chat_mode === 'bubble';
   $('#chatpanel').classList.toggle('off', g.chat_on === false || bubbleMode);
   updateCtrl();
@@ -117,7 +117,7 @@ document.addEventListener('click', e => {
 });
 
 // 스크린 배경: 진행자 화면 → 화면 설정 → 스크린 배경 (예전 값 doll·stage 도 받아 줌)
-const MAPS = { auto: 'auto', night: 'night', purple: 'purple', wine: 'wine', forest: 'forest', ocean: 'ocean', doll: 'wine', stage: 'purple' };
+const MAPS = { auto: 'auto', space: 'space', night: 'night', purple: 'purple', wine: 'wine', forest: 'forest', ocean: 'ocean', doll: 'wine', stage: 'purple' };
 function setMap(g) {
   const m = MAPS[g.map] || 'auto';
   if (document.body.dataset.map !== m) document.body.dataset.map = m;
@@ -183,7 +183,10 @@ function syncCrowd(box, people, mood, kind = 'card') {
   const w = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 6;
   const h = box.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 6;
   const v = people.filter(p => p.v).length;
-  box.style.setProperty('--s', `${fitSize(w, h, people.length, v, kind === 'spect' ? h * 0.8 : h * 0.75, kind === 'spect' ? 16 : 18)}px`);
+  const sz = fitSize(w, h, people.length, v, kind === 'spect' ? h * 0.8 : h * 0.75, kind === 'spect' ? 16 : 18);
+  box.style.setProperty('--s', `${sz}px`);
+  // 캐릭터가 작을 땐 이름표를 숨겨서 글자가 겹치지 않게 (크게 보일 사람·말한 사람은 계속 보여요)
+  box.classList.toggle('tiny-names', sz < 58);
 }
 
 // 상자 안에 모두 들어가는 가장 큰 캐릭터 크기 찾기
@@ -404,6 +407,7 @@ function renderQuestion(g) {
     view = key;
     stage.innerHTML = `
       <div class="qhead">
+        <span class="qtab">QUESTION ${g.q_index + 1}${g.q_total ? ` / ${g.q_total}` : ''}</span>
         <div class="qtext"><span class="kind-pill k-${kindOf(q)}">${KIND_LABEL[kindOf(q)]}</span>${showOf(q) === 'hidden' ? '<span class="kind-pill k-secret">비공개</span>' : ''}${esc(q.text)}</div>
         <div class="clock ${q.time_limit ? '' : 'hidden'}" id="clock" aria-label="남은 시간"><span></span></div>
       </div>

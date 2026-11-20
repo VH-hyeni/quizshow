@@ -31,6 +31,8 @@ alter table public.game add column if not exists map text not null default 'auto
 alter table public.game add column if not exists auto_reveal boolean not null default false;  -- 시간 끝나면 정답까지 자동 공개
 alter table public.game add column if not exists lobby_title text;                            -- 대기 화면 큰 문구 (비우면 기본 문구)
 alter table public.game add column if not exists lobby_sub   text;                            -- 대기 화면 작은 문구
+alter table public.game add column if not exists font_q      text not null default 'pixel';  -- 제목(문제) 글꼴
+alter table public.game add column if not exists font_opt    text not null default 'pixel';  -- 답 선택지 글꼴
 alter table public.game add column if not exists show_qr     boolean not null default false;  -- 진행 중에 입장 QR 팝업 띄우기
 alter table public.game add column if not exists audio_seq   int not null default 0;           -- 노래 '다시 듣기'를 누를 때마다 +1
 alter table public.game add column if not exists kick_epoch  int not null default 0;          -- 누가 내보내질 때마다 +1 (폰이 자기 상태를 한 번 확인)
@@ -472,8 +474,19 @@ create or replace function public.host_set_map(p_pin text, p_map text)
 returns void language plpgsql security definer set search_path = public as $$
 begin
   perform _check_pin(p_pin);
-  if p_map not in ('auto', 'night', 'purple', 'wine', 'forest', 'ocean', 'doll', 'stage') then raise exception '알 수 없는 맵: %', p_map; end if;
+  if p_map not in ('auto', 'space', 'night', 'purple', 'wine', 'forest', 'ocean', 'doll', 'stage') then raise exception '알 수 없는 맵: %', p_map; end if;
   update game set map = p_map, updated_at = now() where id = 1;
+end $$;
+
+-- 진행자: 글꼴 바꾸기 (p_target: q=제목, opt=답 선택지)
+create or replace function public.host_set_font(p_pin text, p_target text, p_font text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  perform _check_pin(p_pin);
+  if p_font not in ('pixel','noto','blackhan','dohyeon','jua','gowun','nanum','myeongjo','gaegu','sunflower') then raise exception '알 수 없는 글꼴: %', p_font; end if;
+  if p_target = 'q' then update game set font_q = p_font, updated_at = now() where id = 1;
+  elsif p_target = 'opt' then update game set font_opt = p_font, updated_at = now() where id = 1;
+  else raise exception '알 수 없는 대상: %', p_target; end if;
 end $$;
 
 -- 진행자: 채팅 표시 방식 바꾸기
@@ -940,6 +953,7 @@ revoke execute on function
   public.host_set_chat(text, boolean),
   public.host_clear_chat(text),
   public.host_set_map(text, text),
+  public.host_set_font(text, text, text),
   public.host_set_chat_mode(text, text),
   public.host_people(text),
   public.host_set_vip(text, text, boolean),
@@ -970,6 +984,7 @@ grant execute on function
   public.host_set_chat(text, boolean),
   public.host_clear_chat(text),
   public.host_set_map(text, text),
+  public.host_set_font(text, text, text),
   public.host_set_chat_mode(text, text),
   public.host_people(text),
   public.host_set_vip(text, text, boolean),

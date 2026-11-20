@@ -1,8 +1,8 @@
-import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, LABELS, TITLE, joinUrl } from './common.js?v=20261120a';
-import { parseQuestions, toText, SAMPLE, TEMPLATES, KIND_LABEL, kindOf, GAMES, fmtPlay, showOf, SHOW_LABEL, revealOf, ytId } from './questions-format.js?v=20261120a';
-import { nextAction as flowNext, prevAction, hostActions, PHASE_NAME } from './flow.js?v=20261120a';
-import { avatarSVG } from './characters.js?v=20261120a';
-import { playSong, stopSong, onSong, songState } from './songplayer.js?v=20261120a';
+import { rpc, refreshGame, $, esc, configured, showConfigError, watchGame, syncClock, remainingSec, LABELS, TITLE, joinUrl } from './common.js?v=20261120f';
+import { parseQuestions, toText, SAMPLE, TEMPLATES, KIND_LABEL, kindOf, GAMES, fmtPlay, showOf, SHOW_LABEL, revealOf, ytId } from './questions-format.js?v=20261120f';
+import { nextAction as flowNext, prevAction, hostActions, PHASE_NAME } from './flow.js?v=20261120f';
+import { avatarSVG } from './characters.js?v=20261120f';
+import { playSong, stopSong, onSong, songState } from './songplayer.js?v=20261120f';
 
 if (!configured) { showConfigError(); throw new Error('config.js not set'); }
 
@@ -433,6 +433,8 @@ $('#chat-clear').addEventListener('click', () => {
 $('#chat-mode').addEventListener('change', e => act(() => rpc('host_set_chat_mode', { p_pin: pin, p_mode: e.target.value })));
 
 // 스크린 맵 바꾸기
+$('#font-q').addEventListener('change', e => act(() => rpc('host_set_font', { p_pin: pin, p_target: 'q', p_font: e.target.value })));
+$('#font-opt').addEventListener('change', e => act(() => rpc('host_set_font', { p_pin: pin, p_target: 'opt', p_font: e.target.value })));
 $('#map-pick').addEventListener('change', e => act(() => rpc('host_set_map', { p_pin: pin, p_map: e.target.value })));
 
 // 채팅 켜기/끄기 (댄스는 항상 허용)
@@ -468,6 +470,8 @@ function onGame() {
   $('#phase').classList.toggle('live', g.phase === 'question');
   $('#chat-toggle').textContent = g.chat_on === false ? '채팅 켜기 (지금 꺼짐)' : '채팅 끄기';
   if (document.activeElement !== $('#map-pick')) $('#map-pick').value = g.map || 'auto';
+  if (document.activeElement !== $('#font-q')) $('#font-q').value = g.font_q || 'pixel';
+  if (document.activeElement !== $('#font-opt')) $('#font-opt').value = g.font_opt || 'pixel';
   if (document.activeElement !== $('#chat-mode')) $('#chat-mode').value = g.chat_mode || 'panel';
   $('#qpos').textContent = g.q_index >= 0 ? `${g.q_index + 1}번째 문제 (총 ${g.q_total}개)` : `문제 ${g.q_total}개 준비됨`;
   $('#curq').textContent = g.q_index >= 0 && g.question
@@ -677,8 +681,10 @@ $('#ppl').addEventListener('click', e => {
 // 문항 상세 편집 (목록에서 문항을 누르면 아래에 폼이 열려요)
 // =====================================================================
 let sel = null, badIdx = null, commitTimer = null, commitSeq = 0;
-const T_KINDS = [['quiz', '정답 퀴즈 (객관식)'], ['typed', '주관식 (직접 적기)'], ['ox', 'OX 퀴즈'], ['poll', '투표'], ['slide', '발표(칠판)'], ['deck', '장표(화면 가득)'],
+const T_KINDS = [['quiz', '정답 퀴즈 (객관식)'], ['typed', '주관식 (직접 적기)'], ['song', '🎵 노래 퀴즈 (객관식)'], ['songw', '🎵 노래 주관식'], ['ox', 'OX 퀴즈'], ['poll', '투표'], ['slide', '발표(칠판)'], ['deck', '장표(화면 가득)'],
                  ['order', '미니게임 · 숫자 순서'], ['reaction', '미니게임 · 반응속도'], ['tap', '미니게임 · 광클']];
+// 목록·드롭다운에 보이는 종류 (노래가 붙은 퀴즈는 '노래 퀴즈')
+const dispType = q => { const t = typeOf(q); return q.audio && t === 'quiz' ? 'song' : q.audio && t === 'typed' ? 'songw' : t; };
 const typeOf = q => q.kind === 'game' ? q.game : q.kind === 'slide' ? (q.full ? 'deck' : 'slide') : kindOf(q);   // kindOf: quiz·typed·ox·poll
 function blankOf(t) {
   if (t === 'deck') return { kind: 'slide', text: '장표', lines: [], full: true };
@@ -839,7 +845,7 @@ function renderDetail() {
   box.innerHTML = `
     <div class="qd-head">
       <b class="qd-num">${sel + 1}번</b>
-      <select class="qd-type" data-type aria-label="문항 종류">${T_KINDS.map(([v, l]) => `<option value="${v}" ${v === t ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select class="qd-type" data-type aria-label="문항 종류">${T_KINDS.map(([v, l]) => `<option value="${v}" ${v === dispType(q) ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <span class="qd-sp"></span>
       <button class="btn ghost sm" type="button" data-qact="dup">복제</button>
       <button class="btn ghost sm qd-del" type="button" data-qact="del">삭제</button>
@@ -890,7 +896,11 @@ $('#qdetail').addEventListener('change', async e => {
     if (old.options?.length && (nq.kind === 'quiz' || nq.kind === 'poll') && !nq.ox && !old.ox) nq.options = old.options.slice(0, 6);
     if (nq.kind === 'quiz' && !nq.ox && (nq.answer == null || nq.answer >= nq.options.length)) nq.answer = 0;
     if (old.image && nq.kind === 'slide') nq.image = old.image;
-    if (nq.kind !== 'slide' && nq.kind !== 'game') { if (old.audio) nq.audio = old.audio; if (old.chorus) nq.chorus = old.chorus; }
+    // 노래 종류끼리 바꿀 땐 노래를 그대로, 노래 없는 종류로 바꾸면 노래를 빼요
+    const songT = ['song', 'songw'].includes(el.value);
+    if (songT) { if (old.audio) nq.audio = old.audio; if (old.chorus) nq.chorus = old.chorus; }
+    else { delete nq.audio; delete nq.chorus; }
+    if (old.image && nq.kind !== 'game' && nq.kind !== 'slide') nq.image = old.image;
     if (nq.typed && old.typed) nq.answers = old.answers;
     if (nq.typed && !old.typed && old.kind === 'quiz' && !old.ox && old.options?.[old.answer]) nq.answers = [old.options[old.answer]];
     questions[sel] = nq; renderQList(); renderDetail(); scheduleCommit();
